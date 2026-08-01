@@ -104,6 +104,17 @@ def test_vercel_config_valid() -> None:
     config = json.loads((ROOT / "vercel.json").read_text(encoding="utf-8"))
     assert config["version"] == 2
     assert any(build["src"] == "app.py" for build in config["builds"])
+    # Static assets must be served through the Flask lambda (@vercel/python
+    # bundles them inside the function, so a filesystem dest 404s).
+    routes = config["routes"]
+    assert any(
+        route.get("src") == "/static/(.*)" and route.get("dest") == "/app.py"
+        for route in routes
+    ), "static route must dest to /app.py"
+    assert any(
+        route.get("src") == "/(.*)" and route.get("dest") == "/app.py"
+        for route in routes
+    ), "catch-all route to /app.py missing"
 
 
 def test_python_syntax_all() -> None:
