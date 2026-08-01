@@ -49,13 +49,24 @@ def test_no_keys_in_tracked_files() -> None:
     if not (ROOT / ".git").exists():
         return  # not a git repo yet — covered by CI after push
     result = subprocess.run(
-        ["git", "grep", "-I", "-n", "-E", "sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}"],
+        ["git", "grep", "-I", "-n", "-E", "sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}|ghp_[A-Za-z0-9]{20,}"],
         capture_output=True,
         text=True,
         cwd=str(ROOT),
         timeout=30,
     )
-    assert result.returncode != 0, f"secrets found in git-tracked files:\n{result.stdout}"
+    # git grep exits 0 when matches are found and 1 when none are. Any other
+    # exit code means the scan itself failed and must surface.
+    assert result.returncode in {0, 1}, f"git grep failed: {result.stderr}"
+    # The redaction test uses an intentional fake key fixture
+    # (sk-abcdefghijklmnopqrstuvwxyz123456), documented in SECRET_SCAN_REPORT.md
+    # and allowlisted in .github/workflows/ci.yml. Any other match is a leak.
+    matches = [
+        line
+        for line in result.stdout.splitlines()
+        if "sk-abcdefghijklmnopqrstuvwxyz123456" not in line
+    ]
+    assert not matches, "secrets found in git-tracked files:\n" + "\n".join(matches)
 
 
 def test_password_gate_works_when_enabled() -> None:

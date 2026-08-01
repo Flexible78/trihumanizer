@@ -35,11 +35,15 @@ from storage import make_store
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
 
+# Serverless filesystems (Vercel) are read-only; never attempt to create
+# directories there. Local installs create data/ lazily and tolerate failures.
 HOSTED = bool(os.environ.get("VERCEL") or os.environ.get("TRIHUMANIZER_HOSTED"))
 if not HOSTED:
-    DATA_DIR.mkdir(exist_ok=True)
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 STORE = make_store(DATA_DIR / "history.db" if not HOSTED else None)
 
 app = Flask(__name__)
