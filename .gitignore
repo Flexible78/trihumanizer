@@ -42,3 +42,5 @@ data/install.log
 .DS_Store
 Thumbs.db
 desktop.ini
+
+.vercel
