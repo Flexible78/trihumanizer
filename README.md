@@ -138,6 +138,15 @@ handler, English-only UI checks, security assertions, hosted-mode behavior,
 and regression tests for speech, providers, PDF, and history. See
 [VALIDATION.md](VALIDATION.md) for the build validation report.
 
+## Screenshots
+
+Screenshots of the deployed interface are generated manually after deployment:
+
+1. Open the deployed site (or `http://127.0.0.1:8868` locally).
+2. Capture the desktop layout at 1440 px width and the mobile layout at 390 px width.
+3. Save them as `docs/screenshots/desktop.png` and `docs/screenshots/mobile.png` and
+   reference them here.
+
 ## License
 
 [MIT](LICENSE)

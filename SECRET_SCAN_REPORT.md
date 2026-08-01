@@ -45,3 +45,12 @@ The pre-existing local file contained live API keys:
 - **Real secrets exposed in code/docs:** 0.
 - **Action taken:** the file is untracked, gitignored, and excluded from the archive; no real key appears in any committed file.
 - Additional protection: `llm_client.redact_secrets` scrubs key-shaped strings from every error before it reaches the browser, and `/api/config` never serializes keys.
+
+## Recommended follow-up
+
+Because the two live keys (Groq, OmniRoute) existed in the working tree before
+this scan, **rotate/revoke both keys** at the provider dashboards. Even though
+they were never committed, they may have been shared in earlier archives or
+backups. After rotation, set the new values only in the server environment
+variables (`.env` locally, Vercel project settings in production) and never in
+files that enter version control.
