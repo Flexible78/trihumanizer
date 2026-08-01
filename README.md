@@ -138,6 +138,27 @@ handler, English-only UI checks, security assertions, hosted-mode behavior,
 and regression tests for speech, providers, PDF, and history. See
 [VALIDATION.md](VALIDATION.md) for the build validation report.
 
+### Live deployment smoke test
+
+`tools/live_smoke_test.py` verifies a deployed instance end to end: config
+flags, the optional `APP_PASSWORD` login, the provider key test, a real model
+generation, and a full translation through `/api/process`.
+
+```bash
+# Without a password gate:
+python tools/live_smoke_test.py https://trihumanizer.vercel.app
+
+# With the password gate enabled:
+python tools/live_smoke_test.py https://trihumanizer.vercel.app mistral mistral-large-latest --password YOUR_PASSWORD
+# or set TRIHUMANIZER_TEST_PASSWORD instead of --password
+
+# Any configured provider:
+python tools/live_smoke_test.py https://trihumanizer.vercel.app groq openai/gpt-oss-120b --password YOUR_PASSWORD
+```
+
+The script never prints secrets — errors are redacted server-side and only
+boolean `configuredKey` flags plus redacted responses are shown.
+
 ## Screenshots
 
 Screenshots of the deployed interface are generated manually after deployment:
