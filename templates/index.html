@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#6956e8">
+  <meta name="description" content="TriHumanizer — AI Translator &amp; Writing Assistant. Translate, rewrite, dictate, and create polished multilingual text.">
+  <title>TriHumanizer — AI Translator &amp; Writing Assistant</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/styles.css?v=1.6.0">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span>T</span></div>
+      <div class="brand-copy">
+        <div class="brand-line">
+          <h1>TriHumanizer</h1>
+          <span class="product-tag">AI Translator &amp; Writing Assistant</span>
+        </div>
+        <p>Translate · rewrite · dictate · create · RU · EN · עברית</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="secure-pill" title="API keys are stored server-side only"><i></i> Keys on server</span>
+      <button id="themeToggle" class="top-button" type="button">🌙 Dark</button>
+      <button id="restartBtn" class="top-button icon-button" type="button" title="Restart the local server">↻</button>
+      <button id="exitBtn" class="top-button icon-button danger-top" type="button" title="Stop the application">⏻</button>
+      <span class="version">v{{ ai_config.version }}</span>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero-ribbon compact-info-ribbon" aria-label="About this application">
+      <div class="hero-copy compact-hero-copy">
+        <span class="eyebrow">AI WORKSPACE</span>
+        <strong>Translate, rewrite, dictate, and create polished multilingual text.</strong>
+      </div>
+      <div class="hero-signals compact-signals">
+        <span class="info-chip primary-info-chip"><b>Mistral Large</b><small>mistral-large-latest</small></span>
+        <span class="info-chip"><b>3 languages</b><small>RU · EN · HE</small></span>
+        <span class="info-chip"><b>Server-side keys</b><small>never exposed to the browser</small></span>
+      </div>
+    </section>
+
+    <div class="mode-selector" role="group" aria-label="Request mode">
+      <button type="button" class="mode-tab active" data-action="auto"><span class="mode-tab-icon">✦</span><span class="mode-tab-label">Auto</span></button>
+      <button type="button" class="mode-tab" data-action="translate"><span class="mode-tab-icon">⇄</span><span class="mode-tab-label">Translate</span></button>
+      <button type="button" class="mode-tab" data-action="write"><span class="mode-tab-icon">✎</span><span class="mode-tab-label">Write</span></button>
+      <button type="button" class="mode-tab" data-action="improve"><span class="mode-tab-icon">✦</span><span class="mode-tab-label">Improve</span></button>
+      <button type="button" class="mode-tab" data-action="research"><span class="mode-tab-icon">◎</span><span class="mode-tab-label">Research</span></button>
+    </div>
+
+    <details id="modelPanel" class="card model-panel">
+      <summary>
+        <div class="summary-main">
+          <div class="summary-icon" aria-hidden="true">AI</div>
+          <div>
+            <div class="summary-title-row">
+              <strong>AI provider &amp; model</strong>
+              <span id="providerStatus" class="status-pill ready">ready</span>
+            </div>
+            <span id="modelSummary">Mistral · mistral-large-latest</span>
+          </div>
+        </div>
+        <div class="summary-side">
+          <span id="configSourceBadge" class="micro-badge">configured</span>
+          <span class="summary-hint">Settings</span>
+          <span class="summary-chevron" aria-hidden="true">⌄</span>
+        </div>
+      </summary>
+
+      <div class="model-panel-body">
+        <div class="provider-grid">
+          <label class="field-card">
+            <span class="field-label">Provider</span>
+            <select id="provider">
+              {% for provider_id, provider in ai_config.providers.items() %}
+              <option value="{{ provider_id }}"{% if provider_id == ai_config.defaultProvider %} selected{% endif %}>{{ provider.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <div class="endpoint-box">
+            <span>Endpoint</span>
+            <code id="endpointPreview">{{ ai_config.providers[ai_config.defaultProvider].endpoint }}</code>
+          </div>
+
+          <label id="apiKeyLabel" class="field-card credential-field">
+            <span class="field-label-row">
+              <span class="field-label">API key override</span>
+              <span id="credentialBadge" class="credential-badge configured">server key</span>
+            </span>
+            <div class="inline-field">
+              <input id="apiKey" type="password" autocomplete="off" placeholder="Leave empty — uses the server-side key">
+              <button id="toggleKeyBtn" class="ghost square" type="button" title="Show or hide the key">👁</button>
+            </div>
+          </label>
+
+          <label id="customUrlLabel" class="field-card hidden">
+            <span class="field-label">API base endpoint</span>
+            <input id="customUrl" type="url" placeholder="https://host.example/v1">
+          </label>
+        </div>
+
+        <div class="model-picker">
+          <div class="model-picker-head">
+            <div>
+              <span class="section-kicker">MODEL CATALOG</span>
+              <h3>Select a model</h3>
+              <p>A starting model is pre-filled. Refresh the list from the endpoint or add one manually.</p>
+            </div>
+            <div class="model-action-row">
+              <button id="testKeyBtn" class="secondary-button" type="button"><span>🔐</span> Test API key</button>
+              <button id="testModelBtn" class="secondary-button test-model-button" type="button"><span>⚡</span> Test model</button>
+              <button id="loadModelsBtn" class="secondary-button" type="button"><span>↻</span> Refresh models</button>
+            </div>
+          </div>
+
+          <div class="model-picker-grid">
+            <label>
+              Filter list
+              <input id="modelFilter" type="search" placeholder="e.g. mistral, gemma, gpt">
+            </label>
+            <label>
+              Active model
+              <select id="modelSelect">
+                <option value="{{ ai_config.defaultModel }}">{{ ai_config.defaultModel }}</option>
+              </select>
+            </label>
+            <label>
+              Exact name (manual)
+              <div class="inline-field">
+                <input id="manualModel" type="text" placeholder="provider/model-name">
+                <button id="addManualModelBtn" class="ghost" type="button">Add</button>
+              </div>
+            </label>
+          </div>
+          <div id="modelStatus" class="model-status">Mistral Large is ready. Refreshing the model list is optional.</div>
+        </div>
+
+        <div class="model-panel-footer">
+          <label class="remember"><input id="rememberSettings" type="checkbox" checked> Remember interface and last successful model</label>
+          <div id="providerHelp" class="help"></div>
+          <button id="collapseModelPanelBtn" class="ghost" type="button">Done, collapse</button>
+        </div>
+      </div>
+    </details>
+
+    <section class="workspace-grid">
+      <section class="card composer workspace-card">
+        <div class="section-title">
+          <div class="title-cluster">
+            <span class="step-badge">01</span>
+            <div>
+              <h2>Input</h2>
+              <p id="inputHint">Message, email, post, recruiter reply, or technical description.</p>
+            </div>
+          </div>
+          <div class="button-row compact">
+            <button id="readSourceBtn" class="ghost" type="button">🔊 Read</button>
+            <button id="pasteBtn" class="ghost" type="button">Paste</button>
+            <button id="copySourceBtn" class="ghost" type="button">Copy</button>
+            <button id="clearTextBtn" class="ghost" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div id="layoutSuggestion" class="layout-suggestion hidden" role="status" aria-live="polite">
+          <div class="layout-suggestion-icon" aria-hidden="true">⌨</div>
+          <div class="layout-suggestion-copy">
+            <strong>Wrong keyboard layout detected</strong>
+            <span id="layoutSuggestionPreview"></span>
+          </div>
+          <div class="layout-suggestion-actions">
+            <button id="layoutApplyBtn" class="secondary-button" type="button">Apply correction</button>
+            <button id="layoutKeepBtn" class="ghost" type="button">Keep original</button>
+            <button id="layoutUndoBtn" class="ghost hidden" type="button">Undo</button>
+          </div>
+        </div>
+
+        <div class="editor-shell">
+          <textarea id="sourceText" maxlength="20000" placeholder="Enter or paste text, or start dictation…" aria-label="Source text"></textarea>
+          <div class="under-text">
+            <span id="charCount">0 / 20 000</span>
+            <span id="autoCorrectBadge" class="auto-correct-badge">⌨ auto-correct: on</span>
+          </div>
+        </div>
+
+        <div class="dictation-bar" id="dictationBar">
+          <div class="dictation-actions">
+            <button id="startDictationBtn" class="voice-primary" type="button">🎙 Start dictation</button>
+            <button id="stopDictationBtn" class="ghost" type="button" disabled>■ Stop</button>
+          </div>
+          <label class="compact-label">
+            Speech language
+            <select id="dictationLanguage">
+              <option value="ru-RU">Russian</option>
+              <option value="en-US">English (US)</option>
+              <option value="en-GB">English (UK)</option>
+              <option value="he-IL">עברית</option>
+            </select>
+          </label>
+          <label class="compact-label">
+            Insert
+            <select id="dictationInsertMode">
+              <option value="append">Append to text</option>
+              <option value="replace">Replace text</option>
+            </select>
+          </label>
+          <div id="dictationStatus" class="voice-status">Browser dictation is free; allow microphone access on first use.</div>
+        </div>
+
+        <div class="language-row">
+          <label>
+            Source language
+            <select id="sourceLanguage">
+              <option value="auto">Auto Detect</option>
+              <option value="ru">Russian</option>
+              <option value="en">English</option>
+              <option value="he">Hebrew</option>
+            </select>
+          </label>
+          <button id="swapBtn" class="swap" type="button" title="Swap languages">⇄</button>
+          <label>
+            Translate to
+            <select id="targetLanguage">
+              <option value="en">English</option>
+              <option value="he">Hebrew</option>
+              <option value="ru">Russian</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="subsection-heading" id="toneHeading">
+          <div>
+            <span class="section-kicker">TONE CONTROL</span>
+            <h3>Style of the result</h3>
+          </div>
+        </div>
+        <div class="mode-grid" id="toneGrid">
+          <label class="mode active">
+            <input type="radio" name="mode" value="business" checked>
+            <span class="mode-icon">B</span>
+            <strong>Business</strong>
+            <span>Rebuilds text, removes roughness and conversational noise</span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="friendly">
+            <span class="mode-icon">F</span>
+            <strong>Friendly</strong>
+            <span>Softens sharpness while keeping a natural, lively tone</span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="short_reply">
+            <span class="mode-icon">S</span>
+            <strong>Short reply</strong>
+            <span>Extracts the meaning and shortens the result to 1–3 sentences</span>
+          </label>
+        </div>
+
+        <div class="settings-grid">
+          <label>
+            Context
+            <select id="context">
+              <option value="general communication">General</option>
+              <option value="message to a recruiter">Message to a recruiter</option>
+              <option value="job interview">Job interview</option>
+              <option value="business email">Business email</option>
+              <option value="LinkedIn message or post">LinkedIn</option>
+              <option value="WhatsApp or messenger reply">WhatsApp / messenger</option>
+              <option value="technical explanation">Technical explanation</option>
+              <option value="client communication">Client communication</option>
+            </select>
+          </label>
+          <label>
+            Additional instruction
+            <input id="customInstruction" type="text" placeholder="e.g. do not change AWS terms">
+          </label>
+        </div>
+
+        <details class="advanced-settings">
+          <summary>Advanced text settings <span>⌄</span></summary>
+          <div class="settings-grid two-col">
+            <label>
+              I write as
+              <select id="writerGender">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </label>
+            <label>
+              Addressing the recipient
+              <select id="recipientGender">
+                <option value="neutral">Neutral / unknown</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="plural">Group</option>
+              </select>
+            </label>
+          </div>
+          <div class="checks">
+            <label><input id="humanizeOriginal" type="checkbox" checked> Humanize the original</label>
+            <label><input id="humanizeTranslation" type="checkbox" checked> Humanize the translation</label>
+            <label><input id="includeLiteral" type="checkbox"> Show literal translation</label>
+            <label><input id="preserveLength" type="checkbox" checked> Keep similar length</label>
+            <label class="check-wide"><input id="autoCorrectLayout" type="checkbox" checked> Auto-correct keyboard layout</label>
+          </div>
+        </details>
+
+        <button id="processBtn" class="primary process-button" type="button">
+          <span id="processBtnLabel">Process</span>
+          <b id="processBtnArrow" aria-hidden="true">→</b>
+        </button>
+        <div class="shortcut-hint" aria-hidden="true"><kbd id="shortcutKey">Ctrl</kbd> + <kbd>Enter</kbd></div>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section id="resultsCard" class="card results workspace-card">
+        <div class="section-title result-title">
+          <div class="title-cluster">
+            <span class="step-badge result-step">02</span>
+            <div>
+              <h2>Result</h2>
+              <p id="detectedLanguage">The result will appear here.</p>
+            </div>
+          </div>
+          <div class="button-row compact">
+            <button id="readPrimaryBtn" class="voice-primary" type="button">🔊 Read</button>
+            <button id="stopSpeechBtn" class="ghost" type="button">■ Stop</button>
+            <button id="shareResultBtn" class="ghost" type="button">Share</button>
+            <button id="copyTranslationBtn" class="accent-small" type="button">Copy result</button>
+            <button id="copyAllBtn" class="ghost" type="button">Copy all</button>
+          </div>
+        </div>
+
+        <div id="emptyResult" class="empty-result">
+          <div class="empty-visual" aria-hidden="true">
+            <span class="empty-ring ring-one"></span>
+            <span class="empty-ring ring-two"></span>
+            <span class="empty-core">T</span>
+          </div>
+          <strong>Ready when you are</strong>
+          <span>Translate, rewrite, compose or research — the result appears here.</span>
+          <div class="empty-chips"><i>RU</i><i>EN</i><i>HE</i></div>
+        </div>
+
+        <div id="resultContent" class="hidden">
+          <div id="emailBlock" class="result-block hidden">
+            <div class="result-head">
+              <div><span class="result-label">WRITTEN TEXT</span><h3 id="emailSubjectLabel">Subject</h3></div>
+              <div class="button-row compact">
+                <button class="speakTargetBtn ghost" data-target="emailBodyText" type="button">🔊 Read</button>
+                <button id="copyEmailBtn" class="ghost" type="button">Copy</button>
+                <button id="emailToSourceBtn" class="ghost" type="button">To input</button>
+              </div>
+            </div>
+            <div id="emailComposed" class="email-composed"></div>
+            <div id="emailFindings" class="email-findings hidden"></div>
+            <textarea id="emailBodyText" class="hidden" readonly></textarea>
+          </div>
+
+          <div id="researchBlock" class="result-block hidden">
+            <div class="result-head">
+              <div><span class="result-label">RESEARCH</span><h3>Findings</h3></div>
+              <div class="button-row compact">
+                <button id="copyResearchBtn" class="ghost" type="button">Copy</button>
+                <button id="researchToSourceBtn" class="ghost" type="button">To input</button>
+              </div>
+            </div>
+            <div id="researchAnswer" class="research-answer"></div>
+            <div id="researchSources" class="research-sources"></div>
+          </div>
+
+          <div id="originalBlock" class="result-block">
+            <div class="result-head">
+              <div><span class="result-label">SOURCE REWRITE</span><h3>Improved original</h3></div>
+              <div class="button-row compact">
+                <button class="speakTargetBtn ghost" data-target="humanizedOriginal" type="button">🔊 Read</button>
+                <button class="copyBtn ghost" data-target="humanizedOriginal" type="button">Copy</button>
+                <button class="toSourceBtn ghost" data-target="humanizedOriginal" type="button">To input</button>
+              </div>
+            </div>
+            <textarea id="humanizedOriginal" readonly></textarea>
+          </div>
+
+          <div id="literalBlock" class="result-block hidden">
+            <div class="result-head">
+              <div><span class="result-label">LITERAL</span><h3>Literal translation</h3></div>
+              <div class="button-row compact">
+                <button class="speakTargetBtn ghost" data-target="literalTranslation" type="button">🔊 Read</button>
+                <button class="copyBtn ghost" data-target="literalTranslation" type="button">Copy</button>
+                <button class="toSourceBtn ghost" data-target="literalTranslation" type="button">To input</button>
+              </div>
+            </div>
+            <textarea id="literalTranslation" readonly></textarea>
+          </div>
+
+          <div id="translationBlock" class="result-block featured-result">
+            <div class="result-head">
+              <div><span class="result-label">FINAL TRANSLATION</span><h3>Natural translation</h3></div>
+              <div class="button-row compact">
+                <button class="speakTargetBtn ghost" data-target="humanizedTranslation" type="button">🔊 Read</button>
+                <button class="copyBtn ghost" data-target="humanizedTranslation" type="button">Copy</button>
+                <button class="toSourceBtn ghost" data-target="humanizedTranslation" type="button">To input</button>
+              </div>
+            </div>
+            <textarea id="humanizedTranslation" readonly></textarea>
+          </div>
+
+          <div id="notes" class="notes hidden"></div>
+
+          <details class="speech-settings-panel">
+            <summary>🔊 Speech settings</summary>
+            <div class="speech-settings-grid">
+              <label>
+                Voice language
+                <select id="speechLanguage">
+                  <option value="auto">Auto by text</option>
+                  <option value="ru-RU">Russian</option>
+                  <option value="en-US">English</option>
+                  <option value="he-IL">עברית</option>
+                </select>
+              </label>
+              <label>
+                Voice
+                <select id="speechVoice">
+                  <option value="">Loading system voices…</option>
+                </select>
+              </label>
+              <label>
+                Rate: <strong id="speechRateValue">1.0×</strong>
+                <input id="speechRate" type="range" min="0.5" max="1.8" step="0.1" value="1.0">
+              </label>
+            </div>
+            <div class="speech-control-row">
+              <button id="pauseSpeechBtn" class="ghost" type="button">⏸ Pause</button>
+              <button id="resumeSpeechBtn" class="ghost" type="button">▶ Resume</button>
+              <span id="speechStatus" class="voice-status">Speech uses the browser's free built-in voices.</span>
+            </div>
+          </details>
+
+          <div class="result-footer-actions">
+            <button id="translationToSourceBtn" class="ghost" type="button">Translation → input</button>
+            <button id="exportTxtBtn" class="ghost" type="button">Export TXT</button>
+            <button id="exportPdfBtn" class="ghost" type="button">Export PDF</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="card history-card">
+      <div class="section-title">
+        <div class="title-cluster">
+          <span class="step-badge neutral-step">H</span>
+          <div>
+            <h2>History</h2>
+            <p>Recent items are saved locally on this device and are available without a new request.</p>
+          </div>
+        </div>
+        <button id="clearHistoryBtn" class="danger ghost" type="button">Clear all history</button>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+  </main>
+
+  <div id="controlOverlay" class="control-overlay hidden">
+    <div class="control-dialog">
+      <div class="spinner"></div>
+      <h2 id="controlTitle">Restarting</h2>
+      <p id="controlMessage">Please wait a few seconds…</p>
+    </div>
+  </div>
+
+  <div id="authOverlay" class="control-overlay hidden">
+    <div class="control-dialog auth-dialog">
+      <div class="auth-mark" aria-hidden="true">🔒</div>
+      <h2>Protected workspace</h2>
+      <p>Enter the application password to use AI features.</p>
+      <form id="authForm">
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+        <button class="primary" type="submit">Unlock</button>
+      </form>
+      <div id="authError" class="status"></div>
+    </div>
+  </div>
+
+  <footer>
+    <span>TriHumanizer Translator v{{ ai_config.version }}</span>
+    <span>Text is sent only to the selected provider. Verify facts before sending.</span>
+  </footer>
+
+  <script nonce="{{ csp_nonce }}">window.TRIHUMANIZER_CONFIG = {{ ai_config|tojson }};window.TRIHUMANIZER_AUTH_REQUIRED = {{ 'true' if auth_required else 'false' }};</script>
+  <script src="/static/layout-corrector.js?v=1.6.0" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/app.js?v=1.6.0" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/speech.js?v=1.6.0" nonce="{{ csp_nonce }}"></script>
+</body>
+</html>

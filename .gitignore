@@ -1,0 +1,44 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# ---- Environment & secrets ----
+.env
+.env.*
+!.env.example
+data/ai_endpoints.json
+*.key
+*.pem
+secrets/
+
+# ---- Local runtime artifacts ----
+data/history.db
+data/app.pid
+data/launcher.pid
+data/app.port
+data/server.log
+data/launcher.log
+data/install.log
+
+# ---- Tooling ----
+.vercel/
+.vercelignore
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ---- Archives & OS ----
+*.zip
+*.tar.gz
+*.7z
+.DS_Store
+Thumbs.db
+desktop.ini

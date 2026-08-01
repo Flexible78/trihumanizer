@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Python syntax validation
+        run: |
+          python -m compileall -q app.py launcher.py stop_app.py llm_client.py \
+            provider_config.py prompts.py quality.py storage.py pdf_export.py \
+            intent.py research.py tests || exit 1
+          echo "Python syntax OK"
+
+      - name: JavaScript syntax validation
+        run: |
+          for f in static/app.js static/speech.js static/layout-corrector.js static/sw.js; do
+            node --check "$f" || exit 1
+          done
+          echo "JavaScript syntax OK"
+
+      - name: Run unit tests
+        run: python tests/run_all.py
+        env:
+          # Give the tests a fake key so configuredKey stays testable without secrets.
+          MISTRAL_API_KEY: "test-dummy-key-not-a-secret"
+
+      - name: Secret scan
+        run: |
+          if grep -rE -I --exclude-dir=.git --exclude-dir=.venv --exclude=*.png \
+              "(sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_\-]{20,}|ghp_[A-Za-z0-9]{20,})" \
+              . ; then
+            echo "SECRETS FOUND"; exit 1
+          fi
+          echo "Secret scan OK"
+
+      - name: Check public UI has no unintended Russian copy
+        run: python tests/check_ui_english.py
+
+      - name: Verify no .venv / databases / archives tracked
+        run: |
+          git ls-files | grep -E "\.venv/|history\.db|\.zip$|\.env$" && exit 1 || echo "Repo hygiene OK"
