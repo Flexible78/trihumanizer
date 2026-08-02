@@ -8,7 +8,7 @@ APP_PASSWORD is set, every path below except /, /api/health, /api/config and
 ## GET /api/health
 
 ```json
-{ "ok": true, "version": "1.6.2", "hosted": false, "auth_required": false }
+{ "ok": true, "version": "1.6.3", "hosted": false, "auth_required": false }
 ```
 
 ## GET /api/config

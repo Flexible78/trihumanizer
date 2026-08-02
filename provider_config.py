@@ -21,7 +21,7 @@ try:  # Optional local development convenience; never required in production.
 except Exception:  # pragma: no cover - dotenv is optional
     pass
 
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.6.3"
 DEFAULT_PROVIDER = "mistral"
 DEFAULT_MODEL = "mistral-large-latest"
 

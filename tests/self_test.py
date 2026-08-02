@@ -77,7 +77,7 @@ def main() -> int:
     client = app.test_client()
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.get_json()["version"] == "1.6.2"
+    assert response.get_json()["version"] == "1.6.3"
 
     config_response = client.get("/api/config")
     assert config_response.status_code == 200

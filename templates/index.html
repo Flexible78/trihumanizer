@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon-192.png" sizes="192x192" type="image/png">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/styles.css?v=1.6.2">
+  <link rel="stylesheet" href="/static/styles.css?v=1.6.3">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -40,12 +40,12 @@
     <section class="hero-ribbon compact-info-ribbon" aria-label="About this application">
       <div class="hero-copy compact-hero-copy">
         <span class="eyebrow">AI WORKSPACE</span>
-        <strong>Translate, rewrite, dictate, and create polished multilingual text.</strong>
+        <strong>Translate, rewrite, dictate, create.</strong>
       </div>
       <div class="hero-signals compact-signals">
-        <span class="info-chip primary-info-chip"><b>Mistral Large</b><small>mistral-large-latest</small></span>
-        <span class="info-chip"><b>3 languages</b><small>RU · EN · HE</small></span>
-        <span class="info-chip"><b>Server-side keys</b><small>never exposed to the browser</small></span>
+        <span class="info-chip primary-info-chip"><b>Mistral Large</b></span>
+        <span class="info-chip"><b>RU / EN / HE</b></span>
+        <span class="info-chip"><b>Server-side keys</b></span>
       </div>
     </section>
 
@@ -58,26 +58,15 @@
     </div>
 
     <section id="aiCompact" class="card ai-compact" aria-label="AI model">
-      <div class="ai-compact-head">
-        <div class="ai-compact-title">⚙️ AI model</div>
-        <p class="ai-compact-sub">Describe what you want</p>
-      </div>
-      <div class="ai-compact-engine">
-        <span>engine:</span>
+      <div class="ai-compact-row">
+        <span class="ai-compact-title">AI model</span>
         <code id="aiCompactEngine">{{ ai_config.defaultProvider }}/{{ ai_config.defaultModel }}</code>
-        <span id="aiCompactVerified" class="ai-compact-flag">(auto-verified)</span>
+        <span id="aiCompactVerified" class="ai-compact-flag">auto-verified</span>
+        <label class="ai-compact-auto"><input id="aiCompactAuto" type="checkbox" checked><span>Auto</span></label>
+        <button id="aiCompactSave" class="ghost" type="button">Save</button>
+        <button id="aiCompactRecheck" class="ghost" type="button">Re-check</button>
+        <p id="aiCompactStatus" class="ai-compact-status" role="status" aria-live="polite"></p>
       </div>
-      <label class="ai-compact-auto">
-        <input id="aiCompactAuto" type="checkbox" checked>
-        <span>automatic (recommended)</span>
-      </label>
-      <p class="ai-compact-note">best available (checked automatically)</p>
-      <div class="ai-compact-actions">
-        <button id="aiCompactSave" class="secondary-button" type="button">Save</button>
-        <button id="aiCompactRecheck" class="ghost" type="button">Re-check all</button>
-      </div>
-      <p id="aiCompactStatus" class="ai-compact-status" role="status" aria-live="polite"></p>
-      <p class="ai-compact-privacy">Only provider and model names travel between browser and server. API keys stay in the server environment.</p>
     </section>
 
     <details id="modelPanel" class="card model-panel">
@@ -521,8 +510,8 @@
   </footer>
 
   <script nonce="{{ csp_nonce }}">window.TRIHUMANIZER_CONFIG = {{ ai_config|tojson }};window.TRIHUMANIZER_AUTH_REQUIRED = {{ 'true' if auth_required else 'false' }};</script>
-  <script src="/static/layout-corrector.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
-  <script src="/static/app.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
-  <script src="/static/speech.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/layout-corrector.js?v=1.6.3" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/app.js?v=1.6.3" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/speech.js?v=1.6.3" nonce="{{ csp_nonce }}"></script>
 </body>
 </html>

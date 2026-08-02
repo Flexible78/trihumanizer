@@ -1,4 +1,4 @@
-/* TriHumanizer layout corrector — v1.6.2
+/* TriHumanizer layout corrector — v1.6.3
  *
  * Detects text typed with the wrong physical keyboard layout and suggests or
  * applies the correct script. This is layout correction (same physical key
@@ -15,7 +15,7 @@
 (function (global) {
   "use strict";
 
-  const VERSION = "1.6.2";
+  const VERSION = "1.6.3";
 
   /* QWERTY key -> character for each layout. */
   const RU = {

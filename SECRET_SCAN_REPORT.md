@@ -1,4 +1,4 @@
-# Secret Scan Report — TriHumanizer v1.6.2
+# Secret Scan Report — TriHumanizer v1.6.3
 
 Date: 2026-08-01
 Scope: full working tree (excluding `.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `.pytest_cache`)

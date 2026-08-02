@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 1.6.3 - Compact chrome and mobile layout
+
+- The oversized AI model block is now a single low row: model, auto switch, Save and Re-check on one line. The long privacy paragraph and duplicate hints were removed.
+- The top information ribbon was slimmed to one short line with three small chips and is hidden entirely on phones.
+- All auxiliary, non-functional blocks (mode tabs, section headers, advanced settings, speech settings, empty result state, footer) got smaller heights and paddings.
+- Mobile layout reworked: tighter paddings under 760px and 430px, icon-free full-width mode tabs, wrapping action rows, smaller empty state, readable input height, sticky Process button kept.
+
 ## Version 1.6.2 - Failover and language defaults
 
 - History entries and the whole history are deleted immediately, without a confirmation dialog.
