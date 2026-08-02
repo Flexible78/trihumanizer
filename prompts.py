@@ -54,7 +54,11 @@ basic grammar error. Never treat that as successful business humanization.
 
 def _common_system(payload: dict) -> str:
     source = LANGUAGE_NAMES.get(payload.get("source_language", "auto"), "detect automatically")
-    target = LANGUAGE_NAMES.get(payload.get("target_language", "en"), "English")
+    requested_target = str(payload.get("target_language") or "auto").strip().lower()
+    if requested_target in {"", "auto"}:
+        target = "the same language as the source text"
+    else:
+        target = LANGUAGE_NAMES.get(requested_target, "English")
     mode = payload.get("mode", "business")
     mode_rule = MODE_RULES.get(mode, MODE_RULES["business"])
     context = (payload.get("context") or "general communication").strip()
@@ -262,7 +266,18 @@ def build_write_messages(payload: dict, intent: dict | None = None) -> list[dict
             output_language = "exactly the same language as the user request below"
     else:
         output_language = LANGUAGE_NAMES.get(requested_target, "English")
-    tone = str(payload.get("tone") or (intent or {}).get("requested_tone") or "polite")
+    write_tones = {
+        "business": "business, professional and polished",
+        "friendly": "friendly, warm and natural",
+        "short_reply": "short and to the point, 1-3 sentences",
+    }
+    selected_mode = str(payload.get("mode") or "business").strip().lower()
+    tone = str(
+        payload.get("tone")
+        or write_tones.get(selected_mode)
+        or (intent or {}).get("requested_tone")
+        or "polite"
+    )
     format_ = str(payload.get("requested_format") or (intent or {}).get("requested_format") or "email")
     context = (payload.get("context") or "general communication").strip()
     findings = payload.get("research_findings") or []
@@ -323,7 +338,12 @@ Return exactly this JSON object (no Markdown, no commentary):
 
 def build_improve_messages(payload: dict, intent: dict | None = None) -> list[dict]:
     text = (payload.get("text") or "").strip()
-    output_language = LANGUAGE_NAMES.get(payload.get("target_language"), "Russian")
+    requested_target = str(payload.get("target_language") or "auto").strip().lower()
+    output_language = (
+        "the same language as the source text"
+        if requested_target in {"", "auto"}
+        else LANGUAGE_NAMES.get(requested_target, "Russian")
+    )
     context = (payload.get("context") or "general communication").strip()
     return [
         {"role": "system", "content": IMPROVE_SYSTEM_PROMPT},

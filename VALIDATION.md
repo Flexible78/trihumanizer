@@ -1,4 +1,4 @@
-# Build validation — 1.6.1
+# Build validation — 1.6.2
 
 The following checks are performed without requests to paid AI models (a local
 mock OpenAI-compatible server is used for provider tests):

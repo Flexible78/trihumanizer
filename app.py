@@ -385,6 +385,51 @@ def test_selected_model():
     )
 
 
+def _chat_with_fallback(*, provider, model, api_key, custom_url, messages, temperature):
+    """Call the selected model and fail over to the next best one on error.
+
+    The chain is ordered by output quality and only contains models that can
+    actually be called, so a broken or rate-limited model never blocks a request.
+    """
+    from provider_config import fallback_candidates
+
+    attempts = [
+        {"provider": provider, "model": model, "api_key": api_key, "custom_url": custom_url}
+    ]
+    for candidate in fallback_candidates(
+        provider, model, allow_local=not HOSTED, api_key=api_key
+    ):
+        attempts.append(
+            {
+                "provider": candidate["provider"],
+                "model": candidate["model"],
+                "api_key": candidate["api_key"],
+                "custom_url": custom_url if candidate["provider"] == provider else "",
+            }
+        )
+
+    errors: list[str] = []
+    last_exc = None
+    for attempt in attempts:
+        try:
+            result, endpoint = chat_completion(
+                provider=attempt["provider"],
+                model=attempt["model"],
+                api_key=attempt["api_key"],
+                custom_url=attempt["custom_url"],
+                messages=messages,
+                temperature=temperature,
+            )
+            return result, endpoint, attempt, errors
+        except LLMError as exc:
+            last_exc = exc
+            errors.append(
+                attempt["provider"] + " / " + attempt["model"] + ": " + _redact_error(exc)
+            )
+
+    raise LLMError("All available models failed. " + " | ".join(errors)) from last_exc
+
+
 def _validate_process_payload(payload: dict):
     text = str(payload.get("text") or "").strip()
     if not text:
@@ -464,11 +509,14 @@ def process_text():
         intent = heuristic_intent(text, str(payload.get("source_language") or "auto"))
         action = intent["mode"]
 
+    used = {"provider": provider, "model": model, "api_key": api_key, "custom_url": custom_url}
+    fallback_errors: list[str] = []
+
     try:
         if action in {"translate", "improve"}:
             if action == "improve":
                 messages = build_improve_messages(payload, intent)
-                result, endpoint = chat_completion(
+                result, endpoint, used, fallback_errors = _chat_with_fallback(
                     provider=provider,
                     model=model,
                     api_key=api_key,
@@ -477,7 +525,7 @@ def process_text():
                     temperature=0.30,
                 )
             else:
-                result, endpoint = chat_completion(
+                result, endpoint, used, fallback_errors = _chat_with_fallback(
                     provider=provider,
                     model=model,
                     api_key=api_key,
@@ -491,10 +539,10 @@ def process_text():
                     quality_retry = True
                     try:
                         second_result, second_endpoint = chat_completion(
-                            provider=provider,
-                            model=model,
-                            api_key=api_key,
-                            custom_url=custom_url,
+                            provider=used["provider"],
+                            model=used["model"],
+                            api_key=used["api_key"],
+                            custom_url=used["custom_url"],
                             messages=build_revision_messages(payload, result, quality_reasons),
                             temperature=max(0.18, tone_temperature - 0.04),
                         )
@@ -540,7 +588,7 @@ def process_text():
                         }
                     )
             messages = build_write_messages(payload, intent)
-            result, endpoint = chat_completion(
+            result, endpoint, used, fallback_errors = _chat_with_fallback(
                 provider=provider,
                 model=model,
                 api_key=api_key,
@@ -632,8 +680,12 @@ def process_text():
             "ok": True,
             "history_id": history_id,
             "result": result,
-            "provider": provider,
-            "model": model,
+            "provider": used["provider"],
+            "model": used["model"],
+            "requested_provider": provider,
+            "requested_model": model,
+            "fallback_used": bool(used["provider"] != provider or used["model"] != model),
+            "fallback_errors": fallback_errors,
             "endpoint": endpoint or "",
             "intent": intent,
             "action": action,

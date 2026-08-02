@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon-192.png" sizes="192x192" type="image/png">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
-  <link rel="stylesheet" href="/static/styles.css?v=1.6.1">
+  <link rel="stylesheet" href="/static/styles.css?v=1.6.2">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -253,7 +253,7 @@
           <label>
             <span id="targetLanguageLabelText">Translate to</span>
             <select id="targetLanguage">
-              <option value="auto">Same as request</option>
+              <option value="auto">Same as original</option>
               <option value="en">English</option>
               <option value="he">Hebrew</option>
               <option value="ru">Russian</option>
@@ -521,8 +521,8 @@
   </footer>
 
   <script nonce="{{ csp_nonce }}">window.TRIHUMANIZER_CONFIG = {{ ai_config|tojson }};window.TRIHUMANIZER_AUTH_REQUIRED = {{ 'true' if auth_required else 'false' }};</script>
-  <script src="/static/layout-corrector.js?v=1.6.1" nonce="{{ csp_nonce }}"></script>
-  <script src="/static/app.js?v=1.6.1" nonce="{{ csp_nonce }}"></script>
-  <script src="/static/speech.js?v=1.6.1" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/layout-corrector.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/app.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
+  <script src="/static/speech.js?v=1.6.2" nonce="{{ csp_nonce }}"></script>
 </body>
 </html>

@@ -1,18 +1,18 @@
-/* TriHumanizer service worker — v1.6.1
+/* TriHumanizer service worker — v1.6.2
  *
  * Offline caching ONLY for static application assets. API responses that
  * contain private user text are NEVER cached.
  */
 "use strict";
 
-const CACHE_NAME = "trihumanizer-static-v1.6.1";
+const CACHE_NAME = "trihumanizer-static-v1.6.2";
 
 const STATIC_ASSETS = [
   "/",
-  "/static/styles.css?v=1.6.1",
-  "/static/app.js?v=1.6.1",
-  "/static/speech.js?v=1.6.1",
-  "/static/layout-corrector.js?v=1.6.1",
+  "/static/styles.css?v=1.6.2",
+  "/static/app.js?v=1.6.2",
+  "/static/speech.js?v=1.6.2",
+  "/static/layout-corrector.js?v=1.6.2",
   "/static/icon-192.png",
   "/static/icon-512.png",
   "/manifest.webmanifest",

@@ -14,7 +14,7 @@ def test_flask_app_imports() -> None:
     import app as app_module
 
     assert app_module.app is not None
-    assert app_module.APP_VERSION == "1.6.1"
+    assert app_module.APP_VERSION == "1.6.2"
     assert callable(app_module.app.wsgi_app)
 
 

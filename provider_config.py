@@ -21,7 +21,7 @@ try:  # Optional local development convenience; never required in production.
 except Exception:  # pragma: no cover - dotenv is optional
     pass
 
-APP_VERSION = "1.6.1"
+APP_VERSION = "1.6.2"
 DEFAULT_PROVIDER = "mistral"
 DEFAULT_MODEL = "mistral-large-latest"
 
@@ -192,6 +192,78 @@ def resolve_api_key(provider: str, override: str = "") -> str:
     if from_env:
         return from_env
     return str(provider_spec(provider).get("default_key") or "").strip()
+
+
+# Ordered by output quality. Used for automatic failover when the selected
+# model errors out, is rate limited or returns an unusable answer.
+FALLBACK_MODEL_CHAIN: list[tuple[str, str]] = [
+    ("mistral", "mistral-large-latest"),
+    ("openai", "gpt-4.1-mini"),
+    ("groq", "openai/gpt-oss-120b"),
+    ("google_studio", "models/gemma-4-31b-it"),
+    ("openrouter", "openrouter/free"),
+    ("omniroute", "kilocode/openrouter/free"),
+    ("freeway", "nemotron-3-ultra-550b-a55b"),
+    ("ollama", "qwen3:8b"),
+]
+
+LOCAL_PROVIDERS = {"omniroute", "freeway", "ollama"}
+
+
+# Same-provider ladders keep failover working when only one API key exists.
+PROVIDER_MODEL_LADDER: dict[str, list[str]] = {
+    "mistral": [
+        "mistral-large-latest",
+        "mistral-medium-latest",
+        "mistral-small-latest",
+        "open-mistral-nemo",
+    ],
+    "groq": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+    "openai": ["gpt-4.1-mini", "gpt-4o-mini"],
+    "google_studio": ["models/gemma-4-31b-it"],
+    "openrouter": ["openrouter/free"],
+}
+
+
+def fallback_candidates(
+    provider: str = "", model: str = "", allow_local: bool = True, api_key: str = ""
+) -> list[dict[str, str]]:
+    """Next best provider/model pairs that can actually be called right now.
+
+    The same provider is tried first with its next best model, so failover also
+    works when only one API key is configured.
+    """
+    provider = (provider or "").strip().lower()
+    model = (model or "").strip()
+    candidates: list[dict[str, str]] = []
+    seen = {(provider, model)}
+    same_key = (api_key or "").strip() or resolve_api_key(provider)
+    same_spec = provider_spec(provider)
+    if same_spec and (same_key or not same_spec.get("requires_key")):
+        for ladder_model in PROVIDER_MODEL_LADDER.get(provider, []):
+            if (provider, ladder_model) in seen:
+                continue
+            seen.add((provider, ladder_model))
+            candidates.append(
+                {"provider": provider, "model": ladder_model, "api_key": same_key}
+            )
+    for candidate_provider, candidate_model in FALLBACK_MODEL_CHAIN:
+        if (candidate_provider, candidate_model) in seen:
+            continue
+        if candidate_provider == provider and candidate_model == model:
+            continue
+        if candidate_provider in LOCAL_PROVIDERS and not allow_local:
+            continue
+        spec = provider_spec(candidate_provider)
+        if not spec:
+            continue
+        key = resolve_api_key(candidate_provider)
+        if spec.get("requires_key") and not key:
+            continue
+        candidates.append(
+            {"provider": candidate_provider, "model": candidate_model, "api_key": key}
+        )
+    return candidates
 
 
 def public_config() -> dict[str, Any]:

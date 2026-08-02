@@ -388,7 +388,7 @@ function loadGeneralSettings() {
   $("provider").value = providerDefaults[data?.provider] ? data.provider : DEFAULT_PROVIDER;
   activeProvider = $("provider").value;
   $("sourceLanguage").value = data?.sourceLanguage || "auto";
-  $("targetLanguage").value = data?.targetLanguage || "en";
+  $("targetLanguage").value = data?.targetLanguage || "auto";
   $("context").value = data?.context || "general communication";
   $("customInstruction").value = data?.customInstruction || "";
   $("writerGender").value = data?.writerGender || "male";
@@ -780,8 +780,11 @@ async function processText() {
     showResult(data.result, data.action || payload.action);
     saveSuccessfulSettings(payload);
     const retryNote = data.quality_retry ? "Quality check ran twice. " : "";
+    const fallbackNote = data.fallback_used
+      ? `${data.requested_model || payload.model} failed, switched automatically to ${data.provider} / ${data.model}. `
+      : "";
     setStatus(
-      `${retryNote}Done. Model: ${data.model}.`,
+      `${fallbackNote}${retryNote}Done. Model: ${data.model}.`,
       false,
       true
     );
@@ -1156,7 +1159,6 @@ function renderHistoryList(items, hosted) {
     del.className = "ghost danger";
     del.textContent = "Delete";
     del.addEventListener("click", async () => {
-      if (!confirm("Delete only this history entry?")) return;
       if (hosted) {
         const items = readJSON(STORAGE.history, []);
         writeJSON(
@@ -1177,7 +1179,6 @@ function renderHistoryList(items, hosted) {
 }
 
 async function clearHistory() {
-  if (!confirm("Delete the entire local history?")) return;
   if (HOSTED) {
     localStorage.removeItem(STORAGE.history);
   } else {
@@ -1219,8 +1220,9 @@ function setAction(action) {
   if (labelEl) labelEl.textContent = requestInFlight ? "Working…" : label;
   $("inputHint").textContent = ACTION_HINTS[action] || "";
   const isWriteOrResearch = action === "write" || action === "research";
-  $("toneHeading").classList.toggle("hidden", isWriteOrResearch);
-  $("toneGrid").classList.toggle("hidden", isWriteOrResearch);
+  // Tone control (Business / Friendly / Short reply) applies to every mode.
+  $("toneHeading").classList.remove("hidden");
+  $("toneGrid").classList.remove("hidden");
   // The output language stays visible and editable in every mode. In Write and
   // Research modes it defaults to "Same as request", so nothing is translated
   // unless the user explicitly selects another language.
@@ -1232,11 +1234,8 @@ function setAction(action) {
     targetLabelText.textContent = isWriteOrResearch ? "Output language" : "Translate to";
   }
   if (targetSelect && !targetLanguageTouched) {
-    if (isWriteOrResearch) {
-      targetSelect.value = "auto";
-    } else if (targetSelect.value === "auto") {
-      targetSelect.value = "en";
-    }
+    // Every mode defaults to the language of the original text.
+    targetSelect.value = "auto";
   }
   const placeholder = action === "write"
     ? "Describe the text you need, e.g. “Compose an email to optical store support asking to exchange my glasses…”"

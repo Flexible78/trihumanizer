@@ -1,5 +1,13 @@
 # Changelog
 
+## Version 1.6.2 - Failover and language defaults
+
+- History entries and the whole history are deleted immediately, without a confirmation dialog.
+- Every mode now defaults the output language to "Same as original", the language of the input text. The selector stays visible and can be changed at any time.
+- Tone control (Business / Friendly / Short reply) is available in every mode, including Write and Research, and is passed to the writing prompt.
+- Automatic model failover: when a model errors, is rate limited or returns invalid JSON, the request is retried on the next best model (other models of the same provider first, then other configured providers). The status line reports which model answered.
+
+
 ## 1.6.1
 
 ### Fixed
