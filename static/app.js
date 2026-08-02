@@ -8,6 +8,82 @@ const DEFAULT_MODEL = APP_CONFIG.defaultModel || "mistral-large-latest";
 const AUTH_REQUIRED = window.TRIHUMANIZER_AUTH_REQUIRED === true;
 const HOSTED = Boolean(APP_CONFIG.hosted);
 
+// Server-side remembered settings: provider, model, endpoint and a boolean
+// flag telling whether an API key is stored. The key itself is never sent to
+// the browser, it stays in data/settings.json on the machine that runs the app.
+let SAVED_SETTINGS = APP_CONFIG.saved || {
+  provider: "",
+  model: "",
+  customUrl: "",
+  persisted: false,
+  providers: {},
+};
+let settingsSaveTimer = null;
+
+function savedEntry(provider) {
+  return (SAVED_SETTINGS.providers || {})[provider] || {};
+}
+
+function savedHasKey(provider) {
+  return Boolean(savedEntry(provider).hasKey);
+}
+
+// Keep the provider table injected at page load in sync with what is stored,
+// so every "is a key configured" check keeps working without a page reload.
+function syncSavedKeyFlags() {
+  const providers = SAVED_SETTINGS.providers || {};
+  Object.keys(providers).forEach((name) => {
+    if (providerDefaults[name] && providers[name].hasKey) {
+      providerDefaults[name].configuredKey = true;
+      providerDefaults[name].savedKey = true;
+    }
+  });
+}
+
+// Autosave of provider, model, endpoint and API key. Debounced by default so
+// typing a key does not produce a request per keystroke.
+async function persistSettings(options) {
+  const settings = options || {};
+  if (HOSTED) return;
+  const remember = $("rememberSettings");
+  if (remember && !remember.checked) return;
+
+  const send = async () => {
+    const body = {
+      provider: $("provider").value,
+      model: selectedModel(),
+      custom_url: $("customUrl").value.trim(),
+      api_key: $("apiKey").value.trim(),
+      clear_key: Boolean(settings.clearKey),
+    };
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => null);
+      if (!data || !data.settings) return;
+      SAVED_SETTINGS = data.settings;
+      syncSavedKeyFlags();
+      // The key is on the server now; keep the input empty so it is never
+      // stored in the browser and never shown again.
+      if (data.stored && body.api_key) $("apiKey").value = "";
+      updateProviderUI();
+      updateCompactBlock();
+    } catch (_) {
+      // Autosave is a convenience: never interrupt the user on failure.
+    }
+  };
+
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+  if (settings.immediate) {
+    await send();
+    return;
+  }
+  settingsSaveTimer = setTimeout(send, 600);
+}
+
 const STORAGE = {
   general: "triHumanizerGeneralV16",
   providers: "triHumanizerProvidersV16",
@@ -55,6 +131,8 @@ let currentAction = "auto";
 let requestInFlight = false;
 let requestController = null;
 let layoutUndoStack = [];
+// True once the user explicitly picks an output language in this session.
+let targetLanguageTouched = false;
 
 const ACTION_LABELS = {
   auto: "Process",
@@ -147,16 +225,24 @@ function captureProviderState(provider = activeProvider) {
   const states = providerStateMap();
   states[provider] = { model: selectedModel(), customUrl: $("customUrl").value.trim() };
   writeJSON(STORAGE.providers, states);
+  persistSettings();
 }
 
 function preferredProviderState(provider) {
+  const server = savedEntry(provider);
   const successful = lastSuccessMap()[provider];
   const saved = providerStateMap()[provider];
-  const defaults = providerDefaults[provider];
+  const defaults = providerDefaults[provider] || {};
   return {
-    model: successful?.model || saved?.model || defaults.model || "",
+    // Server-side memory wins: it is the last combination that actually worked
+    // and it survives a restart of the application and a cleared browser.
+    model: server.model || successful?.model || saved?.model || defaults.model || "",
     apiKey: "",
-    customUrl: successful?.customUrl || saved?.customUrl || (provider === "custom" ? defaults.endpoint : ""),
+    customUrl:
+      server.customUrl ||
+      successful?.customUrl ||
+      saved?.customUrl ||
+      (provider === "custom" ? defaults.endpoint : ""),
   };
 }
 
@@ -230,7 +316,8 @@ function updateProviderUI() {
   const provider = $("provider").value;
   const defaults = providerDefaults[provider] || {};
   const needsKey = Boolean(defaults.requiresKey);
-  const configured = Boolean(defaults.configuredKey);
+  const storedKey = savedHasKey(provider) || Boolean(defaults.savedKey);
+  const configured = Boolean(defaults.configuredKey) || storedKey;
   const isLocal = /^http:\/\/(localhost|127\.0\.0\.1)/i.test(currentEndpoint(provider));
 
   $("providerHelp").textContent = defaults.help || "";
@@ -240,10 +327,18 @@ function updateProviderUI() {
 
   const credentialBadge = $("credentialBadge");
   if (credentialBadge) {
-    credentialBadge.textContent = configured ? "server key" : needsKey ? "key required" : "no key";
+    credentialBadge.textContent = storedKey
+      ? "saved key"
+      : configured
+        ? "server key"
+        : needsKey
+          ? "key required"
+          : "no key";
     credentialBadge.className = `credential-badge ${configured || !needsKey ? "configured" : "missing"}`;
   }
-  $("apiKey").placeholder = configured
+  $("apiKey").placeholder = storedKey
+    ? "Saved key in use; type a new key to replace it"
+    : configured
     ? "Leave empty — uses the server-side key"
     : needsKey
       ? "Enter an API key for this provider"
@@ -1126,10 +1221,22 @@ function setAction(action) {
   const isWriteOrResearch = action === "write" || action === "research";
   $("toneHeading").classList.toggle("hidden", isWriteOrResearch);
   $("toneGrid").classList.toggle("hidden", isWriteOrResearch);
-  const translateControls = $("swapBtn").closest(".language-row");
-  if (translateControls) {
-    const targetLabel = translateControls.querySelector("label:last-child");
-    if (targetLabel) targetLabel.classList.toggle("hidden", action === "write" || action === "research");
+  // The output language stays visible and editable in every mode. In Write and
+  // Research modes it defaults to "Same as request", so nothing is translated
+  // unless the user explicitly selects another language.
+  const targetSelect = $("targetLanguage");
+  const targetLabel = targetSelect ? targetSelect.closest("label") : null;
+  if (targetLabel) targetLabel.classList.remove("hidden");
+  const targetLabelText = $("targetLanguageLabelText");
+  if (targetLabelText) {
+    targetLabelText.textContent = isWriteOrResearch ? "Output language" : "Translate to";
+  }
+  if (targetSelect && !targetLanguageTouched) {
+    if (isWriteOrResearch) {
+      targetSelect.value = "auto";
+    } else if (targetSelect.value === "auto") {
+      targetSelect.value = "en";
+    }
   }
   const placeholder = action === "write"
     ? "Describe the text you need, e.g. “Compose an email to optical store support asking to exchange my glasses…”"
@@ -1366,6 +1473,9 @@ function bindEvents() {
     "sourceLanguage", "targetLanguage", "context", "customInstruction", "writerGender",
     "recipientGender", "humanizeOriginal", "humanizeTranslation", "includeLiteral", "preserveLength",
   ].forEach((id) => $(id).addEventListener("change", saveGeneralSettings));
+  $("targetLanguage").addEventListener("change", () => {
+    targetLanguageTouched = true;
+  });
 
   // Debounced layout check while typing.
   let layoutTimer = null;
@@ -1403,3 +1513,126 @@ setModelStatus(
   false,
   Boolean(selectedModel())
 );
+
+// ---------------------------------------------------------------------------
+// Autosave wiring.
+//
+// Before this, the API key lived only in the DOM: after a restart of the
+// application the field was empty, no key was sent, and the provider answered
+// "Provider error 401: Unauthorized". Provider, model, endpoint and key are
+// now saved on the server as soon as they change and re-applied on start.
+// ---------------------------------------------------------------------------
+(function initSettingsAutosave() {
+  if (HOSTED) return;
+
+  const keyField = $("apiKey");
+  const providerField = $("provider");
+  const modelField = $("modelSelect");
+  const urlField = $("customUrl");
+
+  if (keyField) {
+    keyField.addEventListener("change", () => persistSettings({ immediate: true }));
+    keyField.addEventListener("blur", () => persistSettings({ immediate: true }));
+  }
+  if (providerField) providerField.addEventListener("change", () => persistSettings());
+  if (modelField) modelField.addEventListener("change", () => persistSettings());
+  if (urlField) urlField.addEventListener("change", () => persistSettings());
+
+  syncSavedKeyFlags();
+
+  // Re-read the stored selection on start: this is what makes the saved model
+  // and key survive a restart of the application.
+  fetch("/api/settings")
+    .then((response) => (response.ok ? response.json() : null))
+    .then((data) => {
+      if (!data || !data.settings) return;
+      SAVED_SETTINGS = data.settings;
+      syncSavedKeyFlags();
+      const provider = SAVED_SETTINGS.provider && providerDefaults[SAVED_SETTINGS.provider]
+        ? SAVED_SETTINGS.provider
+        : $("provider").value;
+      $("provider").value = provider;
+      activeProvider = provider;
+      applyProviderState(provider);
+      updateProviderUI();
+      updateCompactBlock();
+    })
+    .catch(() => {});
+})();
+// ---------------------------------------------------------------------------
+// Compact AI model block.
+//
+// Shows the engine actually in use, saves provider/model/key with one click and
+// re-checks the endpoint and the model without opening the full settings panel.
+// ---------------------------------------------------------------------------
+const AUTO_ENGINE_KEY = "triHumanizerAutoEngineV16";
+
+function compactStatus(message, ok) {
+  const node = $("aiCompactStatus");
+  if (!node) return;
+  node.textContent = message || "";
+  node.style.color = ok === false ? "#c0392b" : "";
+}
+
+function updateCompactBlock() {
+  const engine = $("aiCompactEngine");
+  if (!engine) return;
+  const provider = $("provider").value;
+  const model = selectedModel();
+  engine.textContent = provider + "/" + (model || "no model selected");
+  const flag = $("aiCompactVerified");
+  if (flag) {
+    const defaults = providerDefaults[provider] || {};
+    const ready = savedHasKey(provider) || Boolean(defaults.configuredKey) || !defaults.requiresKey;
+    flag.textContent = ready ? "(auto-verified)" : "(key not saved yet)";
+  }
+}
+
+(function initCompactBlock() {
+  if (!$("aiCompact")) return;
+
+  const auto = $("aiCompactAuto");
+  if (auto) {
+    auto.checked = readJSON(AUTO_ENGINE_KEY, true) !== false;
+    auto.addEventListener("change", () => {
+      writeJSON(AUTO_ENGINE_KEY, auto.checked);
+      compactStatus(
+        auto.checked
+          ? "Automatic engine selection is on: the best available model is checked for you."
+          : "Automatic engine selection is off: the model stays exactly as chosen.",
+        true
+      );
+    });
+  }
+
+  const save = $("aiCompactSave");
+  if (save) {
+    save.addEventListener("click", async () => {
+      await persistSettings({ immediate: true });
+      updateCompactBlock();
+      compactStatus("Saved on the server: provider, model, endpoint and key.", true);
+    });
+  }
+
+  const recheck = $("aiCompactRecheck");
+  if (recheck) {
+    recheck.addEventListener("click", async () => {
+      compactStatus("Re-checking the endpoint and the selected model...", true);
+      try {
+        if (typeof loadModels === "function") await loadModels();
+        if (typeof testSelectedModel === "function") await testSelectedModel();
+        updateCompactBlock();
+        compactStatus("Re-check finished. Details are in the settings panel.", true);
+      } catch (_) {
+        compactStatus("Re-check did not finish. Open the settings panel for details.", false);
+      }
+    });
+  }
+
+  ["provider", "modelSelect", "customUrl", "apiKey"].forEach((id) => {
+    const field = $(id);
+    if (field) field.addEventListener("change", updateCompactBlock);
+  });
+
+  updateCompactBlock();
+})();

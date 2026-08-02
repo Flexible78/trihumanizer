@@ -1,4 +1,4 @@
-# Secret Scan Report — TriHumanizer v1.6.0
+# Secret Scan Report — TriHumanizer v1.6.1
 
 Date: 2026-08-01
 Scope: full working tree (excluding `.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `.pytest_cache`)
@@ -37,7 +37,7 @@ The pre-existing local file contained live API keys:
 
 ### 3. `tests/self_test.py:63-65` — test fixture
 
-`sk-abcdefghijklmnopqrstuvwxyz123456` is a deliberately fake key used to verify the secret-redaction function. It is not a real credential.
+`sk-<32-fake-chars>` is a deliberately fake key used to verify the secret-redaction function. It is not a real credential.
 
 ## Conclusion
 

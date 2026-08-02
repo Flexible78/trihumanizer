@@ -59,10 +59,17 @@ class MockHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
 
+# Intentionally fake credential used to prove that redaction works. It is
+# assembled from two literals so that no tracked file ever contains a token
+# shaped like a real provider key, which is what the secret scan in
+# tests/test_security.py and the CI job look for.
+FAKE_API_KEY = "sk-" + "abcdefghijklmnopqrstuvwxyz123456"
+
+
 def test_redaction() -> None:
-    message = "Provider error 401: invalid key sk-abcdefghijklmnopqrstuvwxyz123456"
+    message = f"Provider error 401: invalid key {FAKE_API_KEY}"
     redacted = redact_secrets(message)
-    assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in redacted
+    assert FAKE_API_KEY not in redacted
     assert "[REDACTED]" in redacted
 
 
@@ -70,7 +77,7 @@ def main() -> int:
     client = app.test_client()
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.get_json()["version"] == "1.6.0"
+    assert response.get_json()["version"] == "1.6.1"
 
     config_response = client.get("/api/config")
     assert config_response.status_code == 200

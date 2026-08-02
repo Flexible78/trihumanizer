@@ -48,11 +48,11 @@ jobs:
       - name: Secret scan
         run: |
           # The redaction test uses an intentional fake key fixture
-          # (sk-abcdefghijklmnopqrstuvwxyz123456) to verify llm_client scrubs
+          # (sk-<32-fake-chars>) to verify llm_client scrubs
           # secrets from errors; it is allowlisted here, never a real credential.
           if grep -rE -I --exclude-dir=.git --exclude-dir=.venv --exclude=*.png \
               "(sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_\-]{20,}|ghp_[A-Za-z0-9]{20,})" \
-              . | grep -vE "sk-abcdefghijklmnopqrstuvwxyz123456" ; then
+              . | grep -vE "sk-<32-fake-chars>" ; then
             echo "SECRETS FOUND"; exit 1
           fi
           echo "Secret scan OK"

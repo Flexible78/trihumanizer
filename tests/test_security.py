@@ -59,12 +59,12 @@ def test_no_keys_in_tracked_files() -> None:
     # exit code means the scan itself failed and must surface.
     assert result.returncode in {0, 1}, f"git grep failed: {result.stderr}"
     # The redaction test uses an intentional fake key fixture
-    # (sk-abcdefghijklmnopqrstuvwxyz123456), documented in SECRET_SCAN_REPORT.md
+    # (sk-<32-fake-chars>), documented in SECRET_SCAN_REPORT.md
     # and allowlisted in .github/workflows/ci.yml. Any other match is a leak.
     matches = [
         line
         for line in result.stdout.splitlines()
-        if "sk-abcdefghijklmnopqrstuvwxyz123456" not in line
+        if "sk-<32-fake-chars>" not in line
     ]
     assert not matches, "secrets found in git-tracked files:\n" + "\n".join(matches)
 

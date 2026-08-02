@@ -44,3 +44,7 @@ Thumbs.db
 desktop.ini
 
 .vercel
+
+# Locally saved provider/model selection and API keys (never commit)
+data/settings.json
+data/settings.json.tmp

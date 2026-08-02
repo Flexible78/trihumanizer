@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.6.1
+
+### Fixed
+- Provider error 401: Unauthorized after restarting the application. The API key
+  existed only in the browser input, so a restart left the server with an empty
+  credential. Provider, model, endpoint and key are now stored server-side in
+  data/settings.json and reused automatically on start.
+- resolve_api_key now also honours the built-in default key of local gateways,
+  which was previously defined but never used.
+- The CI secret scan is clean again: the intentional redaction fixture is
+  assembled from two literals, so no tracked file contains a key-shaped string.
+
+### Added
+- settings_store.py: atomic, user-private storage of the provider selection with
+  a secret-free public view (hasKey booleans only).
+- GET, POST and DELETE /api/settings for reading, saving and forgetting the
+  stored selection. /api/config now reports saved, savedKey and envKey.
+- Successful /api/models, /api/test/key, /api/test/model and /api/process calls
+  remember the configuration that worked.
+- Compact AI model block in the interface: current engine, automatic mode, Save
+  and Re-check all, with a saved key badge instead of a re-typed key.
+- Documentation set: README rewritten for GitHub plus docs/ARCHITECTURE.md,
+  docs/CONFIGURATION.md, docs/API.md, docs/TROUBLESHOOTING.md and
+  docs/INTERVIEW_DEFENCE.md.
+
+### Security
+- data/settings.json and its temporary file are git-ignored, written atomically
+  and chmod 0600 where the platform supports it. The key is never sent to the
+  browser.
+## Version 1.6.1 - Write mode language fix
+
+- Fixed: Write mode no longer forces a previously selected translation language
+  (for example Hebrew) onto generated letters. The hidden target language value was
+  still sent to the model on every request.
+- The output language selector is now visible and editable in every mode. It is
+  labelled "Output language" in Write and Research modes and "Translate to" in
+  translation mode.
+- New "Same as request" (auto) option, applied by default in Write and Research
+  modes: the answer keeps the language of the request unless the user picks another
+  language or names one inside the request.
+- Backend: "auto" is accepted in ALLOWED_TARGETS, and build_write_messages resolves
+  the output language from the detected request language and instructs the model not
+  to switch languages.
+
 ## Version 1.6.0 — Smart modes, keyboard layout correction, and hosted deployment
 
 ### Smart request modes

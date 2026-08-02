@@ -31,6 +31,11 @@ from provider_config import (
 )
 from quality import assess_result, choose_better_result
 from research import research_enabled, run_research
+from settings_store import (
+    forget_provider,
+    public_state as settings_public_state,
+    remember_settings,
+)
 from storage import make_store
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,7 +59,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("VERCEL") or os.environ.get("TRIHUMANIZER_HTTPS"))
 
 ALLOWED_LANGUAGES = {"auto", "ru", "en", "he"}
-ALLOWED_TARGETS = {"ru", "en", "he"}
+ALLOWED_TARGETS = {"auto", "ru", "en", "he"}
 ALLOWED_MODES = {"business", "friendly", "short_reply"}
 ALLOWED_ACTIONS = {"auto", "translate", "write", "improve", "research"}
 ALLOWED_PROVIDERS = set(PROVIDER_CATALOG)
@@ -71,6 +76,7 @@ PROTECTED_PREFIXES = (
     "/api/intent",
     "/api/research",
     "/api/control/",
+    "/api/settings",
 )
 
 
@@ -87,6 +93,26 @@ def _provider(payload: dict) -> str:
 def _resolved_key(payload: dict, provider: str) -> str:
     manual = str(payload.get("api_key") or "")
     return resolve_api_key(provider, manual)
+
+
+def _remember(payload: dict, provider: str, model: str = "") -> None:
+    """Persist the working provider/model/key so a restart keeps working.
+
+    Called only after the provider accepted a request, so nothing but known
+    good credentials is stored. Storage failures are ignored on purpose:
+    persistence is a convenience and must never break a successful request.
+    """
+    if HOSTED:
+        return
+    try:
+        remember_settings(
+            provider=provider,
+            model=model or str(payload.get("model") or ""),
+            custom_url=str(payload.get("custom_url") or ""),
+            api_key=str(payload.get("api_key") or ""),
+        )
+    except Exception:
+        pass
 
 
 def _redact_error(error: BaseException) -> str:
@@ -177,6 +203,62 @@ def logout():
     return jsonify({"ok": True})
 
 
+@app.get("/api/settings")
+def read_saved_settings():
+    """Return the stored selection without ever exposing the API key."""
+    return jsonify({"ok": True, "settings": settings_public_state()})
+
+
+@app.post("/api/settings")
+def save_settings():
+    """Store provider, model, endpoint and key for the next application start.
+
+    The key is written to data/settings.json on the server. The response only
+    reports whether a key is on file, never the key itself.
+    """
+    if HOSTED:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "This deployment has a read-only filesystem; use environment variables.",
+                "settings": settings_public_state(),
+            }
+        ), 400
+
+    payload = request.get_json(silent=True) or {}
+    provider = _provider(payload)
+    if provider not in ALLOWED_PROVIDERS:
+        return jsonify({"ok": False, "error": "Invalid provider."}), 400
+
+    model = str(payload.get("model") or "").strip()
+    if model and not is_allowed_model(model):
+        return jsonify({"ok": False, "error": "Invalid model name."}), 400
+
+    custom_url = str(payload.get("custom_url") or "").strip()
+    if custom_url and not custom_url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "Endpoint must start with http:// or https://."}), 400
+
+    stored = remember_settings(
+        provider=provider,
+        model=model,
+        custom_url=custom_url,
+        api_key=str(payload.get("api_key") or ""),
+        clear_key=bool(payload.get("clear_key")),
+    )
+    return jsonify({"ok": True, "stored": stored, "settings": settings_public_state()})
+
+
+@app.delete("/api/settings")
+def delete_settings():
+    """Forget everything stored for one provider, including its API key."""
+    payload = request.get_json(silent=True) or {}
+    provider = str(payload.get("provider") or request.args.get("provider") or "").strip().lower()
+    if provider not in ALLOWED_PROVIDERS:
+        return jsonify({"ok": False, "error": "Invalid provider."}), 400
+    forget_provider(provider)
+    return jsonify({"ok": True, "settings": settings_public_state()})
+
+
 @app.post("/api/models")
 def models():
     payload = request.get_json(silent=True) or {}
@@ -193,6 +275,7 @@ def models():
     except LLMError as exc:
         return jsonify({"ok": False, "error": _redact_error(exc)}), 502
 
+    _remember(payload, provider)
     return jsonify({"ok": True, "models": items, "endpoint": endpoint})
 
 
@@ -225,6 +308,7 @@ def test_api_key():
             }
         ), 502
 
+    _remember(payload, provider)
     return jsonify(
         {
             "ok": True,
@@ -287,6 +371,7 @@ def test_selected_model():
             }
         ), 502
 
+    _remember(payload, provider, model)
     return jsonify(
         {
             "ok": True,
@@ -536,6 +621,8 @@ def process_text():
         return jsonify(
             {"ok": False, "error": _redact_error(exc), "error_category": _error_category(str(exc))}
         ), 502
+
+    _remember(payload, provider, model)
 
     # Clarify results are informational only and would only add empty history noise.
     history_id = None if action == "clarify" else STORE.add(payload, result)

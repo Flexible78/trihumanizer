@@ -153,7 +153,7 @@ def _endpoint_candidates(base: str, resource: str) -> list[str]:
 def _headers(provider: str, api_key: str) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "User-Agent": "TriHumanizer-Translator/1.6.0",
+        "User-Agent": "TriHumanizer-Translator/1.6.1",
     }
     key = api_key.strip()
     if key:

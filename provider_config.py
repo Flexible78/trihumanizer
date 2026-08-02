@@ -9,6 +9,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from settings_store import public_state as stored_public_state
+from settings_store import stored_api_key
+
 BASE_DIR = Path(__file__).resolve().parent
 
 try:  # Optional local development convenience; never required in production.
@@ -18,7 +21,7 @@ try:  # Optional local development convenience; never required in production.
 except Exception:  # pragma: no cover - dotenv is optional
     pass
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 DEFAULT_PROVIDER = "mistral"
 DEFAULT_MODEL = "mistral-large-latest"
 
@@ -171,21 +174,40 @@ def environment_api_key(provider: str) -> str:
 
 
 def resolve_api_key(provider: str, override: str = "") -> str:
-    """Resolve the effective key: user override first, then environment."""
-    return str(override or "").strip() or environment_api_key(provider)
+    """Resolve the effective key for a provider.
+
+    Order of precedence:
+    1. the override sent with the request (key typed in the UI right now),
+    2. the key the user saved locally (survives application restarts),
+    3. server-side environment variables or .env,
+    4. the built-in default key of the provider (local gateways only).
+    """
+    override = str(override or "").strip()
+    if override:
+        return override
+    saved = stored_api_key(provider)
+    if saved:
+        return saved
+    from_env = environment_api_key(provider)
+    if from_env:
+        return from_env
+    return str(provider_spec(provider).get("default_key") or "").strip()
 
 
 def public_config() -> dict[str, Any]:
     """Configuration safe to send to the browser. Never contains secrets."""
     providers: dict[str, dict[str, Any]] = {}
     for provider, spec in PROVIDER_CATALOG.items():
+        effective_key = resolve_api_key(provider)
         providers[provider] = {
             "label": spec["label"],
             "shortLabel": spec["short_label"],
             "endpoint": spec.get("base_url", ""),
             "model": provider_default_model(provider),
             "requiresKey": bool(spec.get("requires_key")),
-            "configuredKey": bool(environment_api_key(provider)),
+            "configuredKey": bool(effective_key),
+            "savedKey": bool(stored_api_key(provider)),
+            "envKey": bool(environment_api_key(provider)),
             "accent": spec.get("accent", "gray"),
             "help": spec.get("help", ""),
         }
@@ -193,6 +215,7 @@ def public_config() -> dict[str, Any]:
         "version": APP_VERSION,
         "defaultProvider": DEFAULT_PROVIDER,
         "defaultModel": DEFAULT_MODEL,
+        "saved": stored_public_state(),
         "providers": providers,
         "authRequired": bool(os.environ.get("APP_PASSWORD")),
         "researchEnabled": os.environ.get("RESEARCH_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"},

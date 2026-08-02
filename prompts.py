@@ -251,7 +251,17 @@ state in notes that current opening hours and stock were not independently verif
 
 def build_write_messages(payload: dict, intent: dict | None = None) -> list[dict]:
     text = (payload.get("text") or "").strip()
-    output_language = LANGUAGE_NAMES.get(payload.get("target_language"), "English")
+    requested_target = str(payload.get("target_language") or "auto").strip().lower()
+    if requested_target in {"", "auto"}:
+        # No explicit output language for writing: keep the language of the
+        # user request instead of silently switching to another one.
+        detected = str((intent or {}).get("input_language") or "").strip().lower()
+        if detected in {"ru", "en", "he"}:
+            output_language = LANGUAGE_NAMES[detected]
+        else:
+            output_language = "exactly the same language as the user request below"
+    else:
+        output_language = LANGUAGE_NAMES.get(requested_target, "English")
     tone = str(payload.get("tone") or (intent or {}).get("requested_tone") or "polite")
     format_ = str(payload.get("requested_format") or (intent or {}).get("requested_format") or "email")
     context = (payload.get("context") or "general communication").strip()
@@ -274,6 +284,7 @@ def build_write_messages(payload: dict, intent: dict | None = None) -> list[dict
             "content": f"""Create the requested text.
 
 Requested output language: {output_language}
+Write the entire result in that language only; never switch to another language.
 Requested tone: {tone}
 Requested format: {format_}
 Context: {context}
