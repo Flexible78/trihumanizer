@@ -134,10 +134,32 @@ should be empty.
 """.strip()
 
 
+def _multi_language_rule(payload: dict) -> str:
+    """Optional extra rule: produce RU, EN and HE in a single call.
+
+    The UI language switcher sets ``multi_language`` so one request fills all
+    three languages instead of three separate requests. The extra ``translations``
+    key is passed through unchanged by the JSON parser, so every existing flow
+    keeps working when the flag is absent.
+    """
+    if not bool(payload.get("multi_language")):
+        return ""
+    return """
+
+ADDITIONAL OUTPUT REQUIREMENT (multi-language mode):
+Add one extra key "translations" to the JSON object:
+  "translations": {"ru": "...", "en": "...", "he": "..."}
+Each value must carry the same message, rewritten in the selected register, in
+natural Russian, English and Hebrew respectively. Never leave a value empty and
+never mix two languages inside one value. Still fill "humanized_translation": it
+must repeat the value of the requested target language.
+"""
+
+
 def build_messages(payload: dict) -> list[dict]:
     text = (payload.get("text") or "").strip()
     return [
-        {"role": "system", "content": _common_system(payload)},
+        {"role": "system", "content": _common_system(payload) + _multi_language_rule(payload)},
         {
             "role": "user",
             "content": f"""Rewrite and translate the following text according to all rules.

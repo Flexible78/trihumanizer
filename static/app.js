@@ -1735,6 +1735,9 @@ function updateCompactBlock() {
     }
     payload.target_language = lang;
     payload.action = "translate";
+    // One request fills RU, EN and HE at once, so the two remaining languages
+    // become instant and cost nothing afterwards.
+    payload.multi_language = true;
 
     switchBusy = true;
     button.disabled = true;
@@ -1757,9 +1760,20 @@ function updateCompactBlock() {
         throw new Error(data.error || "The model did not return a translation.");
       }
       const result = data.result || {};
-      const text = result.humanized_translation || result.humanized_original || result.body || "";
+      const bundle =
+        result.translations && typeof result.translations === "object" ? result.translations : {};
+      const text =
+        String(bundle[lang] || "").trim() ||
+        result.humanized_translation ||
+        result.humanized_original ||
+        result.body ||
+        "";
       if (!text.trim()) throw new Error("The model returned an empty translation.");
       syncCacheKey();
+      LANGS.forEach((item) => {
+        const value = String(bundle[item.code] || "").trim();
+        if (value) cache.set(item.code, value);
+      });
       cache.set(lang, text);
       display(lang, text);
       setStatus(`Ready in ${lang.toUpperCase()}. Model: ${data.model || payload.model}.`, false, true);
