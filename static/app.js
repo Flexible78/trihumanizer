@@ -1951,3 +1951,153 @@ function updateCompactBlock() {
     if (view.classList.contains("visible")) renderDiff();
   }).observe(block, { attributes: true, attributeFilter: ["class"] });
 })();
+
+// ---------------------------------------------------------------------------
+// Hebrew transcription (Latin + Cyrillic) under the final translation.
+//
+// Additive feature: a "Transcription" pill asks the model to transcribe the
+// Hebrew result sound by sound in Latin and in Russian letters, so a Russian
+// speaker can read the Hebrew aloud. Results are cached per text, so reopening
+// the panel costs nothing. Existing rendering and prompts are untouched: the
+// backend only adds the extra key when the transliteration flag is present.
+// ---------------------------------------------------------------------------
+(function initHebrewTranscription() {
+  const block = document.getElementById("translationBlock");
+  const output = document.getElementById("humanizedTranslation");
+  if (!block || !output) return;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".translit-view{display:none;margin:8px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10);line-height:1.6}" +
+    ".translit-view.visible{display:block}" +
+    ".translit-line{display:block;font-size:14px;margin:2px 0;direction:ltr;text-align:left}" +
+    ".translit-tag{display:inline-block;min-width:74px;font-size:11px;font-weight:700;letter-spacing:.05em;opacity:.7}" +
+    ".translit-note{display:block;margin-top:6px;font-size:11px;opacity:.7}";
+  document.head.appendChild(style);
+
+  const view = document.createElement("div");
+  view.className = "translit-view";
+  view.id = "translationTranslitView";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost";
+  button.id = "transcriptionBtn";
+  button.textContent = "Transcription";
+  button.title = "Read Hebrew aloud: Latin and Russian transcription";
+
+  const buttonRow = block.querySelector(".button-row");
+  if (buttonRow) buttonRow.appendChild(button);
+  else block.appendChild(button);
+  block.appendChild(view);
+
+  const cache = new Map();
+  let transcriptionBusy = false;
+
+  function hasHebrew(text) {
+    return /[\u0590-\u05FF]/.test(String(text || ""));
+  }
+
+  function renderTranscription(data) {
+    const latin = String(data?.latin || "").trim();
+    const cyrillic = String(data?.cyrillic || "").trim();
+    if (!latin && !cyrillic) {
+      view.innerHTML = '<span class="translit-note">The model returned no transcription for this text.</span>';
+      return;
+    }
+    const lines = [];
+    if (latin) {
+      lines.push(`<span class="translit-line"><span class="translit-tag">LATIN</span>${escapeHtml(latin)}</span>`);
+    }
+    if (cyrillic) {
+      lines.push(`<span class="translit-line"><span class="translit-tag">КИРИЛЛИЦА</span>${escapeHtml(cyrillic)}</span>`);
+    }
+    lines.push('<span class="translit-note">Pronunciation guide for the Hebrew above · cached for this text.</span>');
+    view.innerHTML = lines.join("");
+  }
+
+  async function fetchTranscription(hebrew) {
+    const payload = selectedPayload();
+    if (!payload.model) {
+      setStatus("Open model settings and choose a model.", true);
+      return null;
+    }
+    payload.text = hebrew;
+    payload.action = "translate";
+    payload.source_language = "he";
+    payload.target_language = "he";
+    payload.multi_language = false;
+    payload.transliteration = true;
+    payload.include_literal = false;
+
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      throw new Error("Authentication required.");
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "The model did not return a transcription.");
+    }
+    const value = (data.result || {}).transliteration || {};
+    return { latin: value.latin || "", cyrillic: value.cyrillic || "" };
+  }
+
+  button.addEventListener("click", async () => {
+    if (transcriptionBusy) return;
+    const visible = view.classList.toggle("visible");
+    button.textContent = visible ? "Hide transcription" : "Transcription";
+    if (!visible) return;
+
+    const hebrew = output.value.trim();
+    if (!hasHebrew(hebrew)) {
+      view.innerHTML =
+        '<span class="translit-note">Transcription is available when the result is in Hebrew. Switch the result to HE first.</span>';
+      return;
+    }
+    const cached = cache.get(hebrew);
+    if (cached) {
+      renderTranscription(cached);
+      return;
+    }
+
+    transcriptionBusy = true;
+    const previousLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "…";
+    view.innerHTML = '<span class="translit-note">Building the transcription…</span>';
+    try {
+      const data = await fetchTranscription(hebrew);
+      if (data) {
+        cache.set(hebrew, data);
+        renderTranscription(data);
+        setStatus("Transcription ready.", false, true);
+      } else {
+        view.innerHTML = '<span class="translit-note">Transcription unavailable right now.</span>';
+      }
+    } catch (error) {
+      view.innerHTML = `<span class="translit-note">${escapeHtml(error.message)}</span>`;
+      setStatus(error.message, true);
+    } finally {
+      transcriptionBusy = false;
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  });
+
+  // A new result invalidates the visible panel.
+  new MutationObserver(() => {
+    if (!view.classList.contains("visible")) return;
+    const hebrew = output.value.trim();
+    const cached = cache.get(hebrew);
+    if (cached) renderTranscription(cached);
+    else {
+      view.innerHTML =
+        '<span class="translit-note">Press Transcription again for this new result.</span>';
+    }
+  }).observe(block, { attributes: true, attributeFilter: ["class"] });
+})();

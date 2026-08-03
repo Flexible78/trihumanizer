@@ -156,10 +156,37 @@ must repeat the value of the requested target language.
 """
 
 
+def _transliteration_rule(payload: dict) -> str:
+    """Optional extra rule: Latin and Cyrillic transcription of Hebrew output.
+
+    Requested by the "Transcription" button in the result pane. Without the flag
+    the prompt stays byte-identical to before.
+    """
+    if not bool(payload.get("transliteration")):
+        return ""
+    return """
+
+ADDITIONAL OUTPUT REQUIREMENT (transcription mode):
+Add one extra key "transliteration" to the JSON object:
+  "transliteration": {"latin": "...", "cyrillic": "..."}
+Both values must transcribe the Hebrew text of "humanized_translation" (or the
+Hebrew source text when no translation was requested) sound by sound, the way an
+Israeli speaker pronounces it. Keep word boundaries and hyphenate attached
+prefixes (ha-, be-, le-, ve-). Use "kh" for כ/ח, "ts" for צ, "sh" for ש. The
+cyrillic value must use Russian letters (ш, ц, х, й, э) so a Russian speaker can
+read it aloud directly. Leave both values empty when the text has no Hebrew.
+"""
+
+
 def build_messages(payload: dict) -> list[dict]:
     text = (payload.get("text") or "").strip()
     return [
-        {"role": "system", "content": _common_system(payload) + _multi_language_rule(payload)},
+        {
+            "role": "system",
+            "content": _common_system(payload)
+            + _multi_language_rule(payload)
+            + _transliteration_rule(payload),
+        },
         {
             "role": "user",
             "content": f"""Rewrite and translate the following text according to all rules.
