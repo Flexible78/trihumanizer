@@ -21,6 +21,21 @@ the result is too close to the noisy input or keeps profanity in a business tone
 - Five request modes: auto, translate, write, improve, research.
 - Russian, English and Hebrew, including right-to-left rendering and PDF export
   with proper bidirectional shaping.
+- RU / EN / HE switcher on the result: all three languages are filled in one
+  model call and switch instantly afterwards.
+- Hebrew reading aids: Latin and Cyrillic transcription, plus a nikud view with
+  full vowel points.
+- Show changes view with a word-level diff between your text and the rewritten
+  version.
+- Protected terms that are never translated, and an optional reply-context field
+  so answers address the incoming message.
+- Scenario presets for HR, support, landlord, clinic, bank and authorities.
+- Side-by-side comparison of two models on the same text.
+- Usage meter with token and cost estimates, an optional daily request limit, and
+  a short-lived server cache for repeated requests.
+- History search plus JSON and CSV export.
+- Hotkeys: Ctrl+Enter to run, Ctrl+1/2/3 for the target language,
+  Ctrl+Shift+S smart swap, Ctrl+Shift+C copy result.
 - Any OpenAI-compatible backend: Mistral, Groq, Google AI Studio, OpenRouter,
   OmniRoute, a local Freeway gateway, OpenAI, Ollama, or a custom endpoint.
 - Compact AI model block: current engine, one-click Save, and Re-check all.

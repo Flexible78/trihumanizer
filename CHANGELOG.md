@@ -1,5 +1,29 @@
 # Changelog
 
+## Version 1.7.0 - Three languages at once, Hebrew reading aids and cost control
+
+### Result pane
+- RU / EN / HE switcher in the final translation block: one click shows the same message in another language, already-loaded languages switch instantly without a new request.
+- Multi-language mode fills Russian, English and Hebrew in a single model call, so switching costs nothing.
+- Show changes view for the improved original: a word-level diff marks in green what the editor added and in red what it dropped, with a removed/added counter. Runs in the browser, no extra request.
+- Transcription panel: Latin and Russian-letter transcription of the Hebrew result, so the text can be read aloud without knowing the alphabet. Cached per text.
+- Nikud panel: the same Hebrew words with full vowel points, in a large right-to-left view with its own copy button.
+- Compare models: pick a second model and both answer the same request in parallel, side by side, with word, character and latency counts plus Copy and Use this per column.
+
+### Input and control
+- Protected terms field: comma-separated names, brands and ticket numbers that are never translated, transliterated or inflected in any output language.
+- Reply context field: paste the incoming message and the answer addresses its actual questions, names and dates without ever translating or quoting it.
+- Scenario presets for HR and interviews, support, landlord and rent, clinic, bank and official authorities: one click fills the situation and the tone instructions.
+- Extra hotkeys: Ctrl/Cmd+1/2/3 for Russian, English and Hebrew, Ctrl/Cmd+Shift+S for a smart swap based on the script actually typed, Ctrl/Cmd+Shift+C to copy the result.
+
+### Cost, history and performance
+- Usage meter under the result: requests, characters, estimated tokens and estimated cost for today, plus an optional daily request limit that blocks further calls.
+- History search and export: live filtering of the list and one-click export as JSON or as CSV with a BOM, so Excel opens Hebrew and Cyrillic correctly.
+- Server-side result cache: identical text with identical settings is answered from memory within the TTL, with no model call. Configurable via TRIHUMANIZER_CACHE_TTL and TRIHUMANIZER_CACHE_MAX.
+
+### Compatibility
+- Every addition is opt-in and additive: without the new flags the prompts are byte-identical to 1.6.3, existing endpoints keep their response shape (a `cached` flag was added), and no existing control, style or handler was replaced.
+
 ## Version 1.6.3 - Compact chrome and mobile layout
 
 - The oversized AI model block is now a single low row: model, auto switch, Save and Re-check on one line. The long privacy paragraph and duplicate hints were removed.
