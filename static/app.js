@@ -2672,3 +2672,191 @@ function updateCompactBlock() {
   // Only highlight the remembered preset; never overwrite what the user typed.
   markActive(String(readJSON(PRESET_KEY, "") || "none"));
 })();
+
+// ---------------------------------------------------------------------------
+// Model comparison: run the same text through a second model, side by side.
+//
+// Additive feature: pick a rival model, press Compare, and both answers are
+// requested in parallel and shown in two columns with per-column copy and
+// "use this" actions. The main result pane is never overwritten unless the user
+// explicitly picks a column, so the normal flow stays exactly as before.
+// ---------------------------------------------------------------------------
+(function initModelCompare() {
+  const anchor = document.getElementById("resultsCard");
+  const modelSelect = document.getElementById("modelSelect");
+  const output = document.getElementById("humanizedTranslation");
+  if (!anchor || typeof selectedPayload !== "function") return;
+
+  const COMPARE_KEY = "triHumanizerCompareModelV1";
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".compare-panel{margin-top:12px;padding-top:10px;border-top:1px solid rgba(127,127,127,.25)}" +
+    ".compare-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
+    ".compare-row select{max-width:260px}" +
+    ".compare-row button{font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer}" +
+    ".compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}" +
+    "@media (max-width:760px){.compare-grid{grid-template-columns:1fr}}" +
+    ".compare-col{padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
+    ".compare-col h4{margin:0 0 6px;font-size:12px;letter-spacing:.03em}" +
+    ".compare-col .compare-text{display:block;white-space:pre-wrap;font-size:14px;line-height:1.6}" +
+    ".compare-col .compare-meta{display:block;margin-top:6px;font-size:11px;opacity:.7}" +
+    ".compare-note{display:block;margin-top:6px;font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  const panel = document.createElement("div");
+  panel.className = "compare-panel";
+  panel.innerHTML =
+    '<span class="compare-row"><label for="compareModel" class="help">Compare with</label>' +
+    '<select id="compareModel"></select>' +
+    '<button type="button" class="ghost" id="compareRunBtn">Compare models</button>' +
+    '<span class="compare-note" id="compareNote">Runs your text twice, in parallel. Counts as two requests.</span></span>' +
+    '<div class="compare-grid hidden" id="compareGrid"></div>';
+  anchor.appendChild(panel);
+
+  const rivalSelect = document.getElementById("compareModel");
+  const runBtn = document.getElementById("compareRunBtn");
+  const grid = document.getElementById("compareGrid");
+  let compareBusy = false;
+
+  function syncRivalOptions() {
+    const saved = String(readJSON(COMPARE_KEY, "") || "");
+    const options = modelSelect
+      ? Array.from(modelSelect.options)
+          .map((option) => option.value)
+          .filter(Boolean)
+      : [];
+    const unique = Array.from(new Set(options));
+    rivalSelect.innerHTML = unique.length
+      ? unique.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")
+      : '<option value="">load models first</option>';
+    if (saved && unique.includes(saved)) rivalSelect.value = saved;
+    else {
+      const current = modelSelect ? modelSelect.value : "";
+      const other = unique.find((value) => value !== current);
+      if (other) rivalSelect.value = other;
+    }
+  }
+
+  function pickText(result) {
+    if (!result) return "";
+    return String(
+      result.humanized_translation ||
+        result.humanized_original ||
+        result.literal_translation ||
+        result.body ||
+        result.answer ||
+        ""
+    ).trim();
+  }
+
+  async function runOne(model) {
+    const payload = selectedPayload();
+    payload.model = model;
+    payload.multi_language = false;
+    const started = Date.now();
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      throw new Error("Authentication required.");
+    }
+    return {
+      model,
+      ok: Boolean(response.ok && data.ok),
+      text: pickText(data.result),
+      error: data.error || "",
+      seconds: ((Date.now() - started) / 1000).toFixed(1),
+    };
+  }
+
+  function renderColumn(entry) {
+    const chars = entry.text.length;
+    const words = entry.text ? entry.text.split(/\s+/).filter(Boolean).length : 0;
+    const body = entry.ok
+      ? `<span class="compare-text">${escapeHtml(entry.text)}</span>` +
+        `<span class="compare-meta">${words} words · ${chars} chars · ${entry.seconds}s</span>` +
+        `<span class="compare-row"><button type="button" class="ghost" data-compare-copy="${escapeHtml(entry.model)}">Copy</button>` +
+        `<button type="button" class="ghost" data-compare-use="${escapeHtml(entry.model)}">Use this</button></span>`
+      : `<span class="compare-meta">${escapeHtml(entry.error || "No answer from this model.")}</span>`;
+    return `<div class="compare-col"><h4>${escapeHtml(entry.model)}</h4>${body}</div>`;
+  }
+
+  function bindColumnActions(entries) {
+    grid.querySelectorAll("[data-compare-copy]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const entry = entries.find((item) => item.model === button.dataset.compareCopy);
+        if (!entry) return;
+        try {
+          await navigator.clipboard.writeText(entry.text);
+          if (typeof flashButton === "function") flashButton(button, "Copied");
+          else setStatus("Copied.", false, true);
+        } catch (error) {
+          setStatus("Could not copy this version.", true);
+        }
+      });
+    });
+    grid.querySelectorAll("[data-compare-use]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const entry = entries.find((item) => item.model === button.dataset.compareUse);
+        if (!entry || !output) return;
+        output.value = entry.text;
+        if (typeof setDirection === "function") setDirection(output, entry.text);
+        setStatus(`Result replaced with the ${entry.model} version.`, false, true);
+      });
+    });
+  }
+
+  runBtn.addEventListener("click", async () => {
+    if (compareBusy) return;
+    const payload = selectedPayload();
+    if (!payload.text || !payload.text.trim()) {
+      setStatus("Add some text before comparing models.", true);
+      return;
+    }
+    const mainModel = payload.model;
+    const rivalModel = rivalSelect.value;
+    if (!mainModel || !rivalModel) {
+      setStatus("Load the model list and pick two models first.", true);
+      return;
+    }
+    if (mainModel === rivalModel) {
+      setStatus("Pick a different model to compare against.", true);
+      return;
+    }
+    writeJSON(COMPARE_KEY, rivalModel);
+
+    compareBusy = true;
+    runBtn.disabled = true;
+    const previousLabel = runBtn.textContent;
+    runBtn.textContent = "Comparing…";
+    grid.classList.remove("hidden");
+    grid.innerHTML = '<div class="compare-col"><span class="compare-meta">Working…</span></div>';
+    try {
+      const entries = await Promise.all([runOne(mainModel), runOne(rivalModel)]);
+      grid.innerHTML = entries.map(renderColumn).join("");
+      bindColumnActions(entries);
+      const winner = entries.filter((entry) => entry.ok).sort((a, b) => b.text.length - a.text.length)[0];
+      setStatus(
+        winner ? "Comparison ready. Pick the version you like." : "Neither model returned a usable answer.",
+        !winner,
+        Boolean(winner)
+      );
+    } catch (error) {
+      grid.innerHTML = `<div class="compare-col"><span class="compare-meta">${escapeHtml(error.message)}</span></div>`;
+      setStatus(error.message, true);
+    } finally {
+      compareBusy = false;
+      runBtn.disabled = false;
+      runBtn.textContent = previousLabel;
+    }
+  });
+
+  if (modelSelect) modelSelect.addEventListener("change", syncRivalOptions);
+  new MutationObserver(syncRivalOptions).observe(modelSelect || document.body, { childList: true });
+  syncRivalOptions();
+})();
