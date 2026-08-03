@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+venv
+data
+node_modules
+.vercel
+__pycache__
+*.pyc
+*.pyo
+*.log
+*.zip
+*.sqlite
+history.db
+docs/INTERVIEW_DEFENCE.md
+docs/self_intro_he_en_infra_engineer.md

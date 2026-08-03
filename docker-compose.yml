@@ -1,0 +1,21 @@
+# One command for a local or homelab run:  docker compose up --build
+services:
+  trihumanizer:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Set a password to gate the UI and a stable secret so sessions survive a
+      # restart. Provider keys are read from this same environment.
+      APP_PASSWORD: "${APP_PASSWORD:-}"
+      FLASK_SECRET_KEY: "${FLASK_SECRET_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      TRIHUMANIZER_RATE_LIMIT: "${TRIHUMANIZER_RATE_LIMIT:-20}"
+      TRIHUMANIZER_RATE_WINDOW: "${TRIHUMANIZER_RATE_WINDOW:-60}"
+    volumes:
+      - trihumanizer-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  trihumanizer-data:
