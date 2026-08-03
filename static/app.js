@@ -1819,3 +1819,135 @@ function updateCompactBlock() {
 
   captureCurrent();
 })();
+
+// ---------------------------------------------------------------------------
+// Before / after change view for the improved original.
+//
+// Additive feature: a "Show changes" pill renders a word-level diff between the
+// text the user submitted and the humanized original, so the real editorial work
+// (removed profanity, fixed grammar, dropped filler) becomes visible instead of
+// invisible. Pure client side: no request, no change to existing rendering code.
+// ---------------------------------------------------------------------------
+(function initBeforeAfterDiff() {
+  const block = document.getElementById("originalBlock");
+  const output = document.getElementById("humanizedOriginal");
+  const source = document.getElementById("sourceText");
+  if (!block || !output || !source) return;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".diff-view{display:none;margin:6px 0 10px;padding:10px 12px;border-radius:10px;line-height:1.65;font-size:14px;background:rgba(127,127,127,.10)}" +
+    ".diff-view.visible{display:block}" +
+    ".diff-view ins{background:rgba(46,160,67,.22);text-decoration:none;border-radius:4px;padding:0 2px}" +
+    ".diff-view del{background:rgba(207,34,46,.20);border-radius:4px;padding:0 2px}" +
+    ".diff-summary{display:block;margin-top:8px;font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  const view = document.createElement("div");
+  view.className = "diff-view";
+  view.id = "originalDiffView";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "ghost";
+  toggle.id = "toggleDiffBtn";
+  toggle.textContent = "Show changes";
+
+  const buttonRow = block.querySelector(".button-row");
+  if (buttonRow) buttonRow.appendChild(toggle);
+  else block.appendChild(toggle);
+  block.insertBefore(view, output);
+
+  function tokenize(text) {
+    return String(text || "").match(/\s+|[^\s]+/g) || [];
+  }
+
+  function diffTokens(before, after) {
+    // Classic LCS table. Editorial texts are short, so O(n*m) is comfortable;
+    // very large inputs fall back to a plain message instead of freezing the tab.
+    const n = before.length;
+    const m = after.length;
+    if ((n + 1) * (m + 1) > 4000000) return null;
+    const lcs = new Int32Array((n + 1) * (m + 1));
+    const at = (i, j) => i * (m + 1) + j;
+    for (let i = n - 1; i >= 0; i -= 1) {
+      for (let j = m - 1; j >= 0; j -= 1) {
+        lcs[at(i, j)] =
+          before[i] === after[j]
+            ? lcs[at(i + 1, j + 1)] + 1
+            : Math.max(lcs[at(i + 1, j)], lcs[at(i, j + 1)]);
+      }
+    }
+    const parts = [];
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (before[i] === after[j]) {
+        parts.push(["same", before[i]]);
+        i += 1;
+        j += 1;
+      } else if (lcs[at(i + 1, j)] >= lcs[at(i, j + 1)]) {
+        parts.push(["del", before[i]]);
+        i += 1;
+      } else {
+        parts.push(["ins", after[j]]);
+        j += 1;
+      }
+    }
+    while (i < n) {
+      parts.push(["del", before[i]]);
+      i += 1;
+    }
+    while (j < m) {
+      parts.push(["ins", after[j]]);
+      j += 1;
+    }
+    return parts;
+  }
+
+  function renderDiff() {
+    const before = tokenize(source.value.trim());
+    const after = tokenize(output.value.trim());
+    if (!before.length || !after.length) {
+      view.innerHTML = '<span class="diff-summary">Nothing to compare yet: run a request first.</span>';
+      return;
+    }
+    const parts = diffTokens(before, after);
+    if (!parts) {
+      view.innerHTML = '<span class="diff-summary">This text is too long for the change view.</span>';
+      return;
+    }
+    let removed = 0;
+    let added = 0;
+    const html = parts
+      .map(([kind, token]) => {
+        const safe = escapeHtml(token).replace(/\n/g, "<br>");
+        if (kind === "same") return safe;
+        if (!token.trim()) return kind === "ins" ? safe : "";
+        if (kind === "del") {
+          removed += 1;
+          return `<del>${safe}</del>`;
+        }
+        added += 1;
+        return `<ins>${safe}</ins>`;
+      })
+      .join("");
+    view.innerHTML =
+      html +
+      `<span class="diff-summary">${removed} removed · ${added} added — green is what the editor added, red is what it dropped from your text.</span>`;
+  }
+
+  toggle.addEventListener("click", () => {
+    const visible = view.classList.toggle("visible");
+    toggle.textContent = visible ? "Hide changes" : "Show changes";
+    if (visible) {
+      renderDiff();
+      if (typeof setDirection === "function") setDirection(view, output.value);
+    }
+  });
+
+  // Keep an open change view in sync with every new result.
+  new MutationObserver(() => {
+    if (view.classList.contains("visible")) renderDiff();
+  }).observe(block, { attributes: true, attributeFilter: ["class"] });
+})();
