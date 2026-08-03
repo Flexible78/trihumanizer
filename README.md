@@ -5,9 +5,11 @@ in Russian, English and Hebrew. It runs as a small Flask application on your own
 machine, talks to any OpenAI-compatible provider, and keeps every credential on
 the server side.
 
-Replace OWNER in the badge below with your GitHub account after the first push.
+![CI](https://github.com/Flexible78/trihumanizer/actions/workflows/ci.yml/badge.svg)
 
-![CI](https://github.com/OWNER/trihumanizer/actions/workflows/ci.yml/badge.svg)
+Live demo: https://trihumanizer.vercel.app — the hosted instance is behind a
+password gate, because every AI endpoint there costs real provider credits. Run
+it locally with your own key to see the full workspace.
 
 ## Why it exists
 
