@@ -869,7 +869,10 @@ function showResult(result, action = selectedAction()) {
   const isResearch = action === "research" || Boolean(result.retrieved_at && !result.subject);
   $("emailBlock").classList.toggle("hidden", !isEmail);
   $("researchBlock").classList.toggle("hidden", !isResearch);
-  $("originalBlock").classList.toggle("hidden", !result.humanized_original && !isEmail && !isResearch);
+  // Hide the improved-original box whenever it is empty. Composing an email or
+  // running research produces no rewritten source, so that box used to stay on
+  // screen as an empty frame in exactly those modes.
+  $("originalBlock").classList.toggle("hidden", !String(result.humanized_original || "").trim());
   $("literalBlock").classList.toggle("hidden", !result.literal_translation);
   $("translationBlock").classList.toggle("hidden", !result.humanized_translation);
 
@@ -3127,4 +3130,269 @@ function updateCompactBlock() {
       copyResult();
     }
   });
+})();
+
+// ---------------------------------------------------------------------------
+// RU / EN / HE switcher for every other result surface.
+//
+// Additive feature: the same three pills now sit on the composed email, the
+// research answer and the improved original, so every mode can show its result
+// in all three languages. Each surface keeps its own cache, so switching back is
+// instant and free, and one request fills all three languages at once. A value
+// is only accepted when its script really matches the language, with one
+// narrower retry otherwise, so no Hebrew text can appear under RU or EN.
+// ---------------------------------------------------------------------------
+(function initUniversalLanguageSwitch() {
+  if (typeof selectedPayload !== "function") return;
+
+  const LANGS = [
+    { code: "ru", label: "RU", title: "Русский" },
+    { code: "en", label: "EN", title: "English" },
+    { code: "he", label: "HE", title: "עברית" },
+  ];
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".lang-switch-extra{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 8px}" +
+    ".lang-switch-extra .lang-btn{padding:4px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.05em;cursor:pointer}" +
+    ".lang-switch-extra .lang-btn.active{box-shadow:inset 0 0 0 2px currentColor}" +
+    ".lang-switch-extra .lang-btn[disabled]{opacity:.5;cursor:progress}" +
+    ".lang-switch-extra .lang-hint{font-size:11px;opacity:.7}";
+  document.head.appendChild(style);
+
+  const syncCallbacks = [];
+
+  function scriptLanguage(text) {
+    const value = String(text || "");
+    if (/[\u0590-\u05FF]/.test(value)) return "he";
+    if (/[\u0400-\u04FF]/.test(value)) return "ru";
+    if (/[A-Za-z]/.test(value)) return "en";
+    return "";
+  }
+
+  function matchesLanguage(text, lang) {
+    const detected = scriptLanguage(String(text || "").trim());
+    return Boolean(detected) && detected === lang;
+  }
+
+  async function postProcess(payload) {
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      setStatus("Authentication required.", true);
+      return null;
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "The model did not return a translation.");
+    }
+    return data;
+  }
+
+  function attach(config) {
+    const block = document.getElementById(config.blockId);
+    const target = document.getElementById(config.targetId);
+    if (!block || !target) return;
+
+    const row = document.createElement("div");
+    row.className = "lang-switch-extra";
+    row.id = `${config.targetId}LangSwitch`;
+
+    const hint = document.createElement("span");
+    hint.className = "lang-hint";
+
+    const buttons = new Map();
+    const cache = new Map();
+    let baseText = "";
+    let busy = false;
+
+    function read() {
+      return String((config.kind === "value" ? target.value : target.textContent) || "");
+    }
+
+    function write(text) {
+      if (config.kind === "value") {
+        target.value = text;
+        if (typeof setDirection === "function") setDirection(target, text);
+        return;
+      }
+      const rtl = /[\u0590-\u05FF]/.test(text);
+      target.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+      target.style.direction = rtl ? "rtl" : "ltr";
+      target.style.textAlign = rtl ? "right" : "left";
+    }
+
+    function markActive(lang) {
+      buttons.forEach((button, code) => button.classList.toggle("active", code === lang));
+    }
+
+    function updateHint() {
+      const ready = Array.from(cache.keys())
+        .map((code) => code.toUpperCase())
+        .sort();
+      hint.textContent = ready.length > 1 ? `ready: ${ready.join(" · ")}` : "";
+    }
+
+    // The change view compares the source with the rewritten source, so it makes
+    // no sense while a translated version is on screen.
+    function closeDiffIfForeign(lang) {
+      if (config.blockId !== "originalBlock") return;
+      const view = document.getElementById("originalDiffView");
+      const toggle = document.getElementById("toggleDiffBtn");
+      if (!view || !toggle) return;
+      if (lang !== scriptLanguage(baseText) && view.classList.contains("visible")) {
+        view.classList.remove("visible");
+        toggle.textContent = "Show changes";
+      }
+    }
+
+    function syncFromRender() {
+      const text = read().trim();
+      if (!text) {
+        markActive("");
+        return;
+      }
+      const known = Array.from(cache.values()).some((value) => String(value).trim() === text);
+      if (!known && text !== baseText) {
+        // A fresh result replaced the old one: forget the old languages.
+        cache.clear();
+        baseText = text;
+      }
+      const lang = scriptLanguage(text);
+      if (lang) {
+        cache.set(lang, read());
+        markActive(lang);
+      }
+      updateHint();
+    }
+
+    async function fetchLanguage(lang, button) {
+      const payload = selectedPayload();
+      const base = baseText || read().trim();
+      if (!base) {
+        setStatus("There is no result to translate yet.", true);
+        return;
+      }
+      if (!payload.model) {
+        setStatus("Open model settings and choose a model.", true);
+        return;
+      }
+      // Translate the result itself, not the original input.
+      payload.text = base;
+      payload.action = "translate";
+      payload.source_language = "auto";
+      payload.target_language = lang;
+      payload.multi_language = true;
+
+      busy = true;
+      button.disabled = true;
+      const previousLabel = button.textContent;
+      button.textContent = "…";
+      setStatus(`Translating the result into ${lang.toUpperCase()}…`);
+      try {
+        let text = "";
+        for (const attempt of [1, 2]) {
+          if (attempt === 2) {
+            payload.multi_language = false;
+            setStatus(`Retrying ${lang.toUpperCase()}…`);
+          }
+          const data = await postProcess(payload);
+          if (!data) return;
+          const result = data.result || {};
+          const bundle =
+            result.translations && typeof result.translations === "object" ? result.translations : {};
+          LANGS.forEach((item) => {
+            const value = String(bundle[item.code] || "").trim();
+            if (value && matchesLanguage(value, item.code)) cache.set(item.code, value);
+          });
+          text =
+            [
+              String(bundle[lang] || ""),
+              String(result.humanized_translation || ""),
+              String(result.humanized_original || ""),
+              String(result.body || ""),
+              String(result.answer || ""),
+            ].find((value) => matchesLanguage(value, lang)) || "";
+          if (text) break;
+        }
+        if (!text) {
+          throw new Error(
+            `The model answered in another language instead of ${lang.toUpperCase()}. Try again or pick a stronger model.`
+          );
+        }
+        cache.set(lang, text.trim());
+        write(text.trim());
+        markActive(lang);
+        closeDiffIfForeign(lang);
+        updateHint();
+        setStatus(`Result shown in ${lang.toUpperCase()}.`, false, true);
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        busy = false;
+        button.disabled = false;
+        button.textContent = previousLabel;
+      }
+    }
+
+    LANGS.forEach((lang) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost lang-btn";
+      button.dataset.lang = lang.code;
+      button.textContent = lang.label;
+      button.title = `${lang.title} — show this result in that language`;
+      button.addEventListener("click", async () => {
+        if (busy) return;
+        syncFromRender();
+        const cached = cache.get(lang.code);
+        if (cached) {
+          write(cached);
+          markActive(lang.code);
+          closeDiffIfForeign(lang.code);
+          setStatus(`Showing the ${lang.label} version (cached, no new request).`, false, true);
+          return;
+        }
+        await fetchLanguage(lang.code, button);
+      });
+      buttons.set(lang.code, button);
+      row.appendChild(button);
+    });
+    row.appendChild(hint);
+    (target.parentElement || block).insertBefore(row, target);
+
+    new MutationObserver(syncFromRender).observe(block, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    syncCallbacks.push(syncFromRender);
+    syncFromRender();
+  }
+
+  [
+    { blockId: "emailBlock", targetId: "emailBodyText", kind: "value" },
+    { blockId: "researchBlock", targetId: "researchAnswer", kind: "text" },
+    { blockId: "originalBlock", targetId: "humanizedOriginal", kind: "value" },
+  ].forEach(attach);
+
+  // Every render goes through showResult, so wrapping it keeps all switchers in
+  // sync without touching the existing rendering code.
+  if (typeof showResult === "function") {
+    const baseShowResult = showResult;
+    showResult = function showResultWithLanguageSwitchers(result, action) {
+      const value = action === undefined ? baseShowResult(result) : baseShowResult(result, action);
+      syncCallbacks.forEach((sync) => {
+        try {
+          sync();
+        } catch (error) {
+          /* a switcher must never break rendering */
+        }
+      });
+      return value;
+    };
+  }
 })();
