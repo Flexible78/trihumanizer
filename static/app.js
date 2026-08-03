@@ -3085,6 +3085,219 @@ function updateCompactBlock() {
 })();
 
 // ---------------------------------------------------------------------------
+// Hebrew reading tools on every result surface.
+//
+// Nikud and transcription used to exist only in the natural-translation block,
+// so a Hebrew letter or a Hebrew research answer had no way to show vowel points
+// or pronunciation. The same two actions are attached to the letter, the research
+// answer and the improved original. They stay hidden until that section really
+// holds Hebrew, so nothing extra appears for Russian or English results.
+// ---------------------------------------------------------------------------
+(function initHebrewToolsEverywhere() {
+  if (typeof selectedPayload !== "function") return;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".hebrew-tools-view{display:none;margin:8px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
+    ".hebrew-tools-view.visible{display:block}" +
+    ".hebrew-tools-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap}" +
+    ".hebrew-tools-line{display:block;margin-bottom:4px;font-size:14px;line-height:1.7}" +
+    ".hebrew-tools-tag{display:inline-block;min-width:74px;font-size:10px;letter-spacing:.06em;opacity:.7}" +
+    ".hebrew-tools-note{display:block;font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  function hasHebrew(text) {
+    return /[\u0590-\u05FF]/.test(String(text || ""));
+  }
+
+  async function askModel(text, kind) {
+    const payload = selectedPayload();
+    if (!payload.model) throw new Error("Open model settings and choose a model.");
+    payload.text = text;
+    payload.action = "translate";
+    payload.source_language = "he";
+    payload.target_language = "he";
+    payload.multi_language = false;
+    payload.include_literal = false;
+    payload.transliteration = kind === "translit";
+    payload.nikud = kind === "nikud";
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      throw new Error("Authentication required.");
+    }
+    if (!response.ok || !data.ok) throw new Error(data.error || "The model returned nothing usable.");
+    return data.result || {};
+  }
+
+  function attach(config) {
+    const block = document.getElementById(config.blockId);
+    const target = document.getElementById(config.targetId);
+    if (!block || !target) return;
+
+    const view = document.createElement("div");
+    view.className = "hebrew-tools-view";
+
+    const labels = { nikud: "Nikud", translit: "Transcription" };
+    const buttons = {};
+    const row = block.querySelector(".button-row");
+    Object.keys(labels).forEach((kind) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost";
+      button.dataset.hebrewTool = kind;
+      button.textContent = labels[kind];
+      button.title =
+        kind === "nikud"
+          ? "Show this Hebrew text with vowel points"
+          : "Show how this Hebrew text is pronounced";
+      button.hidden = true;
+      buttons[kind] = button;
+      if (row) row.appendChild(button);
+      else block.appendChild(button);
+    });
+    block.appendChild(view);
+
+    const cache = new Map();
+    let busy = false;
+    let openKind = "";
+    let lastState = null;
+
+    function read() {
+      if (typeof target.value === "string") return target.value.trim();
+      return String(target.innerText || target.textContent || "").trim();
+    }
+
+    function resetLabels() {
+      Object.keys(labels).forEach((kind) => {
+        buttons[kind].textContent = labels[kind];
+      });
+    }
+
+    // Guarded against its own DOM writes, so the observer below cannot loop.
+    function refresh() {
+      const available = !block.classList.contains("hidden") && hasHebrew(read());
+      if (available === lastState) return;
+      lastState = available;
+      Object.keys(buttons).forEach((kind) => {
+        buttons[kind].hidden = !available;
+      });
+      if (!available) {
+        view.classList.remove("visible");
+        openKind = "";
+        resetLabels();
+      }
+    }
+
+    function render(kind, value) {
+      if (kind === "nikud") {
+        const text = String(value || "").trim();
+        view.innerHTML = text
+          ? `<span class="hebrew-tools-text">${escapeHtml(text)}</span>` +
+            '<span class="hebrew-tools-note">Same words, vowel points added · cached for this text.</span>'
+          : '<span class="hebrew-tools-note">The model returned no vocalised text.</span>';
+        return;
+      }
+      const latin = String((value || {}).latin || "").trim();
+      const cyrillic = String((value || {}).cyrillic || "").trim();
+      if (!latin && !cyrillic) {
+        view.innerHTML = '<span class="hebrew-tools-note">The model returned no transcription.</span>';
+        return;
+      }
+      const parts = [];
+      if (latin) {
+        parts.push(
+          `<span class="hebrew-tools-line"><span class="hebrew-tools-tag">LATIN</span>${escapeHtml(latin)}</span>`
+        );
+      }
+      if (cyrillic) {
+        parts.push(
+          `<span class="hebrew-tools-line"><span class="hebrew-tools-tag">КИРИЛЛИЦА</span>${escapeHtml(cyrillic)}</span>`
+        );
+      }
+      parts.push('<span class="hebrew-tools-note">Pronunciation guide for the Hebrew above · cached for this text.</span>');
+      view.innerHTML = parts.join("");
+    }
+
+    async function open(kind) {
+      if (busy) return;
+      if (openKind === kind && view.classList.contains("visible")) {
+        view.classList.remove("visible");
+        openKind = "";
+        resetLabels();
+        return;
+      }
+      const hebrew = read();
+      view.classList.add("visible");
+      if (!hasHebrew(hebrew)) {
+        view.innerHTML = '<span class="hebrew-tools-note">This section holds no Hebrew text right now.</span>';
+        return;
+      }
+      openKind = kind;
+      resetLabels();
+      buttons[kind].textContent = kind === "nikud" ? "Hide nikud" : "Hide transcription";
+      const key = `${kind}|${hebrew}`;
+      if (cache.has(key)) {
+        render(kind, cache.get(key));
+        return;
+      }
+      busy = true;
+      buttons[kind].disabled = true;
+      view.innerHTML =
+        '<span class="hebrew-tools-note">' +
+        (kind === "nikud" ? "Adding vowel points…" : "Building the transcription…") +
+        "</span>";
+      try {
+        const result = await askModel(hebrew, kind);
+        const value =
+          kind === "nikud"
+            ? String(result.nikud_text || "")
+            : {
+                latin: (result.transliteration || {}).latin || "",
+                cyrillic: (result.transliteration || {}).cyrillic || "",
+              };
+        cache.set(key, value);
+        render(kind, value);
+      } catch (error) {
+        view.innerHTML = `<span class="hebrew-tools-note">${escapeHtml(error.message)}</span>`;
+        if (typeof setStatus === "function") setStatus(error.message, true);
+      } finally {
+        busy = false;
+        buttons[kind].disabled = false;
+      }
+    }
+
+    Object.keys(buttons).forEach((kind) => {
+      buttons[kind].addEventListener("click", () => open(kind));
+    });
+
+    new MutationObserver(refresh).observe(block, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    target.addEventListener("input", refresh);
+    // Textarea values are written programmatically, for example by the language
+    // pills, and that fires no event, so a click anywhere re-checks the section.
+    document.addEventListener("click", () => setTimeout(refresh, 80), true);
+    refresh();
+  }
+
+  [
+    { blockId: "emailBlock", targetId: "emailBodyText" },
+    { blockId: "researchBlock", targetId: "researchAnswer" },
+    { blockId: "originalBlock", targetId: "humanizedOriginal" },
+  ].forEach(attach);
+})();
+
+// ---------------------------------------------------------------------------
 // History tools: instant search plus JSON and CSV export.
 //
 // Additive feature: a search box filters the rendered history list live, and two
