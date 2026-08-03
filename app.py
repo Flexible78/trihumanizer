@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import secrets
@@ -64,6 +65,14 @@ ALLOWED_MODES = {"business", "friendly", "short_reply"}
 ALLOWED_ACTIONS = {"auto", "translate", "write", "improve", "research"}
 ALLOWED_PROVIDERS = set(PROVIDER_CATALOG)
 MAX_TEXT_LENGTH = 20000
+
+# Short-lived in-process cache for identical /api/process requests. Repeating the
+# very same text with the very same settings is answered from memory instead of
+# paying for another model call. TTL and size are configurable per deployment.
+RESULT_CACHE_TTL = float(os.environ.get("TRIHUMANIZER_CACHE_TTL", "900") or 900)
+RESULT_CACHE_MAX = int(os.environ.get("TRIHUMANIZER_CACHE_MAX", "64") or 64)
+_RESULT_CACHE: dict = {}
+_RESULT_CACHE_LOCK = threading.Lock()
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 AUTH_REQUIRED = bool(APP_PASSWORD)
@@ -459,6 +468,67 @@ def _validate_process_payload(payload: dict):
     return None
 
 
+def _cache_key(payload: dict, provider: str, model: str, action: str) -> str:
+    """Hash every input that can change the answer, and nothing else."""
+    parts = [provider, model, action]
+    for field in (
+        "text",
+        "source_language",
+        "target_language",
+        "mode",
+        "context",
+        "custom_instruction",
+        "writer_gender",
+        "recipient_gender",
+        "conversation",
+    ):
+        parts.append(str(payload.get(field) or ""))
+    for flag in (
+        "humanize_original",
+        "humanize_translation",
+        "include_literal",
+        "preserve_length",
+        "multi_language",
+        "transliteration",
+        "nikud",
+    ):
+        parts.append("1" if payload.get(flag) else "0")
+    glossary = payload.get("glossary")
+    if isinstance(glossary, (list, tuple)):
+        parts.append(",".join(str(item) for item in glossary))
+    else:
+        parts.append(str(glossary or ""))
+    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str):
+    if RESULT_CACHE_TTL <= 0 or not key:
+        return None
+    now = time.time()
+    with _RESULT_CACHE_LOCK:
+        entry = _RESULT_CACHE.get(key)
+        if not entry:
+            return None
+        stored_at, cached = entry
+        if now - stored_at > RESULT_CACHE_TTL:
+            _RESULT_CACHE.pop(key, None)
+            return None
+        return dict(cached)
+
+
+def _cache_put(key: str, result: dict) -> None:
+    if RESULT_CACHE_TTL <= 0 or not key or not isinstance(result, dict):
+        return
+    now = time.time()
+    with _RESULT_CACHE_LOCK:
+        for stale in [k for k, (stored_at, _) in list(_RESULT_CACHE.items()) if now - stored_at > RESULT_CACHE_TTL]:
+            _RESULT_CACHE.pop(stale, None)
+        while len(_RESULT_CACHE) >= RESULT_CACHE_MAX:
+            oldest = min(_RESULT_CACHE, key=lambda item: _RESULT_CACHE[item][0])
+            _RESULT_CACHE.pop(oldest, None)
+        _RESULT_CACHE[key] = (now, dict(result))
+
+
 @app.post("/api/intent")
 def detect_intent():
     payload = request.get_json(silent=True) or {}
@@ -511,6 +581,34 @@ def process_text():
 
     used = {"provider": provider, "model": model, "api_key": api_key, "custom_url": custom_url}
     fallback_errors: list[str] = []
+
+    # Identical request, identical settings: answer from memory, no model call.
+    cache_key = (
+        _cache_key(payload, provider, model, action)
+        if action in {"translate", "improve", "write"}
+        else ""
+    )
+    cached_result = _cache_get(cache_key)
+    if cached_result is not None:
+        return jsonify(
+            {
+                "ok": True,
+                "history_id": None,
+                "result": cached_result,
+                "provider": provider,
+                "model": model,
+                "requested_provider": provider,
+                "requested_model": model,
+                "fallback_used": False,
+                "fallback_errors": [],
+                "endpoint": "",
+                "intent": intent,
+                "action": action,
+                "quality_retry": bool(cached_result.get("quality_retry")),
+                "quality_warnings": [],
+                "cached": True,
+            }
+        )
 
     try:
         if action in {"translate", "improve"}:
@@ -672,6 +770,8 @@ def process_text():
 
     _remember(payload, provider, model)
 
+    _cache_put(cache_key, result)
+
     # Clarify results are informational only and would only add empty history noise.
     history_id = None if action == "clarify" else STORE.add(payload, result)
 
@@ -691,6 +791,7 @@ def process_text():
             "action": action,
             "quality_retry": bool(result.get("quality_retry")),
             "quality_warnings": [],
+            "cached": False,
         }
     )
 
