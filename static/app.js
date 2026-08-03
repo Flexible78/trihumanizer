@@ -2101,3 +2101,148 @@ function updateCompactBlock() {
     }
   }).observe(block, { attributes: true, attributeFilter: ["class"] });
 })();
+
+// ---------------------------------------------------------------------------
+// Usage meter: characters, estimated tokens, estimated cost and a daily budget.
+//
+// Additive feature: every /api/process call made from this browser is counted
+// locally (localStorage, per calendar day). The badge shows today's requests,
+// estimated tokens and estimated cost, and warns when the configured daily
+// limit is reached. Implemented by wrapping window.fetch for the /api/process
+// route only, so no existing call site is modified.
+// ---------------------------------------------------------------------------
+(function initUsageMeter() {
+  const anchor = document.getElementById("resultsCard") || document.body;
+  if (!anchor) return;
+
+  const USAGE_KEY = "triHumanizerUsageV1";
+  const LIMIT_KEY = "triHumanizerUsageLimitV1";
+  // Rough blended price per 1M tokens in USD; only an estimate, never a bill.
+  const PRICE_PER_MTOK = 0.9;
+  const CHARS_PER_TOKEN = 3.6;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".usage-meter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 0;font-size:11px;opacity:.85}" +
+    ".usage-meter strong{font-size:12px}" +
+    ".usage-meter .usage-limit{width:64px;padding:2px 6px;border-radius:6px;font-size:11px}" +
+    ".usage-meter.over{color:#c0392b;opacity:1}" +
+    ".usage-meter button{font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer}";
+  document.head.appendChild(style);
+
+  function today() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function readUsage() {
+    const stored = readJSON(USAGE_KEY, {});
+    if (stored.day !== today()) return { day: today(), requests: 0, chars: 0, tokens: 0 };
+    return {
+      day: stored.day,
+      requests: Number(stored.requests) || 0,
+      chars: Number(stored.chars) || 0,
+      tokens: Number(stored.tokens) || 0,
+    };
+  }
+
+  function dailyLimit() {
+    const value = Number(readJSON(LIMIT_KEY, 0)) || 0;
+    return value > 0 ? value : 0;
+  }
+
+  const meter = document.createElement("div");
+  meter.className = "usage-meter";
+  meter.id = "usageMeter";
+
+  const text = document.createElement("span");
+  const limitLabel = document.createElement("label");
+  limitLabel.textContent = "daily limit: ";
+  const limitInput = document.createElement("input");
+  limitInput.type = "number";
+  limitInput.min = "0";
+  limitInput.step = "1";
+  limitInput.className = "usage-limit";
+  limitInput.title = "Maximum number of AI requests per day from this browser. 0 disables the limit.";
+  limitInput.value = String(dailyLimit() || "");
+  limitLabel.appendChild(limitInput);
+
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.className = "ghost";
+  reset.textContent = "Reset today";
+
+  meter.append(text, limitLabel, reset);
+  anchor.appendChild(meter);
+
+  function renderMeter() {
+    const usage = readUsage();
+    const limit = dailyLimit();
+    const cost = (usage.tokens / 1000000) * PRICE_PER_MTOK;
+    const costText = cost >= 0.01 ? `$${cost.toFixed(2)}` : `$${cost.toFixed(4)}`;
+    text.innerHTML =
+      `Today: <strong>${usage.requests}</strong> request(s) · ` +
+      `${usage.chars.toLocaleString("en-US")} chars · ` +
+      `~${usage.tokens.toLocaleString("en-US")} tokens · ~${costText}` +
+      (limit ? ` · limit ${usage.requests}/${limit}` : "");
+    meter.classList.toggle("over", Boolean(limit) && usage.requests >= limit);
+  }
+
+  function countRequest(body) {
+    const usage = readUsage();
+    let chars = 0;
+    try {
+      const parsed = typeof body === "string" ? JSON.parse(body) : {};
+      chars = String(parsed.text || "").length;
+    } catch (_) {
+      chars = 0;
+    }
+    usage.requests += 1;
+    usage.chars += chars;
+    // Prompt plus answer, both directions, rounded up to a safe estimate.
+    usage.tokens += Math.ceil(((chars * 2.6) / CHARS_PER_TOKEN) + 700);
+    writeJSON(USAGE_KEY, usage);
+    renderMeter();
+  }
+
+  function limitReached() {
+    const limit = dailyLimit();
+    if (!limit) return false;
+    return readUsage().requests >= limit;
+  }
+
+  limitInput.addEventListener("change", () => {
+    const value = Math.max(0, Math.floor(Number(limitInput.value) || 0));
+    writeJSON(LIMIT_KEY, value);
+    limitInput.value = String(value || "");
+    renderMeter();
+    setStatus(value ? `Daily limit set to ${value} request(s).` : "Daily limit disabled.", false, true);
+  });
+
+  reset.addEventListener("click", () => {
+    writeJSON(USAGE_KEY, { day: today(), requests: 0, chars: 0, tokens: 0 });
+    renderMeter();
+    setStatus("Today's usage counter reset.", false, true);
+  });
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function countingFetch(resource, options) {
+    const url = typeof resource === "string" ? resource : (resource && resource.url) || "";
+    const isProcess = String(url).includes("/api/process");
+    if (isProcess && limitReached()) {
+      setStatus(
+        `Daily limit of ${dailyLimit()} request(s) reached. Raise or clear the limit under the result.`,
+        true
+      );
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: false, error: "Daily request limit reached." }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+    if (isProcess) countRequest(options && options.body);
+    return originalFetch(resource, options);
+  };
+
+  renderMeter();
+})();
