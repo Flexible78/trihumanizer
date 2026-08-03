@@ -2790,7 +2790,8 @@ function updateCompactBlock() {
   const panel = document.createElement("div");
   panel.className = "compare-panel";
   panel.innerHTML =
-    '<span class="compare-row"><label for="compareModel" class="help">Compare with</label>' +
+    '<span class="compare-row"><label for="compareProvider" class="help">Compare with</label>' +
+    '<select id="compareProvider"></select>' +
     '<select id="compareModel"></select>' +
     '<button type="button" class="ghost" id="compareRunBtn">Compare models</button>' +
     '<span class="compare-note" id="compareNote">Runs your text twice, in parallel. Counts as two requests.</span></span>' +
@@ -2798,27 +2799,136 @@ function updateCompactBlock() {
   anchor.appendChild(panel);
 
   const rivalSelect = document.getElementById("compareModel");
+  const providerSelect = document.getElementById("compareProvider");
   const runBtn = document.getElementById("compareRunBtn");
   const grid = document.getElementById("compareGrid");
+  const note = document.getElementById("compareNote");
   let compareBusy = false;
+  // The same ladders the server uses for failover, so every provider offers a
+  // few known-good models even before its live list has been fetched.
+  const KNOWN_MODELS = {
+    mistral: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "open-mistral-nemo"],
+    groq: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+    openai: ["gpt-4.1-mini", "gpt-4o-mini"],
+    google_studio: ["models/gemma-4-31b-it"],
+    openrouter: ["openrouter/free"],
+    omniroute: ["kilocode/openrouter/free"],
+    freeway: ["nemotron-3-ultra-550b-a55b"],
+    ollama: ["qwen3:8b"],
+  };
+  const liveModels = new Map();
+
+  function providerConfig(name) {
+    const all = typeof providerDefaults === "object" && providerDefaults ? providerDefaults : {};
+    return all[name] || {};
+  }
+
+  function providerNames() {
+    const all = typeof providerDefaults === "object" && providerDefaults ? providerDefaults : {};
+    const names = Object.keys(all);
+    return names.length ? names : Object.keys(KNOWN_MODELS);
+  }
+
+  function providerLabel(name) {
+    const config = providerConfig(name);
+    return String(config.shortLabel || config.short_label || config.label || name);
+  }
+
+  function currentProvider() {
+    const select = document.getElementById("provider");
+    return select ? select.value : "";
+  }
+
+  function staticModels(provider) {
+    const config = providerConfig(provider);
+    const preferred = config.defaultModel || config.default_model || "";
+    return Array.from(new Set([preferred, ...(KNOWN_MODELS[provider] || [])].filter(Boolean)));
+  }
+
+  function optionsFor(provider) {
+    if (provider && provider === currentProvider() && modelSelect) {
+      const own = Array.from(modelSelect.options)
+        .map((option) => option.value)
+        .filter(Boolean);
+      if (own.length) return Array.from(new Set(own));
+    }
+    const live = liveModels.get(provider);
+    if (live && live.length) return live;
+    return staticModels(provider);
+  }
+
+  function savedChoice() {
+    const saved = readJSON(COMPARE_KEY, "");
+    if (saved && typeof saved === "object") {
+      return { provider: String(saved.provider || ""), model: String(saved.model || "") };
+    }
+    return { provider: "", model: String(saved || "") };
+  }
+
+  function updateNote(provider) {
+    if (!note) return;
+    const config = providerConfig(provider);
+    const needsKey = Boolean(config.requiresKey || config.requires_key);
+    const hasKey = Boolean(config.configuredKey || config.configured_key);
+    if (provider && provider !== currentProvider() && needsKey && !hasKey) {
+      note.textContent = `${providerLabel(provider)} needs its own API key saved on the server.`;
+      return;
+    }
+    note.textContent = "Runs your text twice, in parallel. Counts as two requests.";
+  }
+
+  function syncProviderOptions() {
+    if (!providerSelect) return;
+    const saved = savedChoice();
+    const names = providerNames();
+    const previous = providerSelect.value || saved.provider || currentProvider();
+    providerSelect.innerHTML = names
+      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(providerLabel(name))}</option>`)
+      .join("");
+    if (names.includes(previous)) providerSelect.value = previous;
+    else if (names.includes(currentProvider())) providerSelect.value = currentProvider();
+  }
+
+  // Fetches the real model list of another provider. The API key stays on the
+  // server, so nothing is sent from the form; if it fails the static ladder stays.
+  async function loadProviderModels(provider) {
+    if (!provider || provider === currentProvider() || liveModels.has(provider)) return;
+    try {
+      const response = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        if (typeof showAuthOverlay === "function") showAuthOverlay();
+        return;
+      }
+      if (!response.ok || !data.ok || !Array.isArray(data.models) || !data.models.length) return;
+      liveModels.set(
+        provider,
+        Array.from(new Set(data.models.filter(Boolean))).sort((a, b) => a.localeCompare(b))
+      );
+      syncRivalOptions();
+    } catch (error) {
+      // Offline or no key for that provider: the known models remain selectable.
+    }
+  }
 
   function syncRivalOptions() {
-    const saved = String(readJSON(COMPARE_KEY, "") || "");
-    const options = modelSelect
-      ? Array.from(modelSelect.options)
-          .map((option) => option.value)
-          .filter(Boolean)
-      : [];
-    const unique = Array.from(new Set(options));
+    const saved = savedChoice();
+    const provider = providerSelect ? providerSelect.value : currentProvider();
+    const unique = optionsFor(provider);
     rivalSelect.innerHTML = unique.length
       ? unique.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")
       : '<option value="">load models first</option>';
-    if (saved && unique.includes(saved)) rivalSelect.value = saved;
+    if (saved.model && unique.includes(saved.model)) rivalSelect.value = saved.model;
     else {
-      const current = modelSelect ? modelSelect.value : "";
+      const current = provider === currentProvider() && modelSelect ? modelSelect.value : "";
       const other = unique.find((value) => value !== current);
       if (other) rivalSelect.value = other;
     }
+    updateNote(provider);
   }
 
   function pickText(result) {
@@ -2833,10 +2943,18 @@ function updateCompactBlock() {
     ).trim();
   }
 
-  async function runOne(model) {
+  async function runOne(model, provider) {
     const payload = selectedPayload();
     payload.model = model;
     payload.multi_language = false;
+    const target = provider || currentProvider();
+    if (target) payload.provider = target;
+    if (target && target !== currentProvider()) {
+      // The key in the form belongs to the provider selected above, so the
+      // server resolves the stored key of the provider being compared instead.
+      payload.api_key = "";
+      payload.custom_url = "";
+    }
     const started = Date.now();
     const response = await fetch("/api/process", {
       method: "POST",
@@ -2849,6 +2967,8 @@ function updateCompactBlock() {
       throw new Error("Authentication required.");
     }
     return {
+      id: `${target}|${model}`,
+      provider: target,
       model,
       ok: Boolean(response.ok && data.ok),
       text: pickText(data.result),
@@ -2863,16 +2983,17 @@ function updateCompactBlock() {
     const body = entry.ok
       ? `<span class="compare-text">${escapeHtml(entry.text)}</span>` +
         `<span class="compare-meta">${words} words · ${chars} chars · ${entry.seconds}s</span>` +
-        `<span class="compare-row"><button type="button" class="ghost" data-compare-copy="${escapeHtml(entry.model)}">Copy</button>` +
-        `<button type="button" class="ghost" data-compare-use="${escapeHtml(entry.model)}">Use this</button></span>`
+        `<span class="compare-row"><button type="button" class="ghost" data-compare-copy="${escapeHtml(entry.id)}">Copy</button>` +
+        `<button type="button" class="ghost" data-compare-use="${escapeHtml(entry.id)}">Use this</button></span>`
       : `<span class="compare-meta">${escapeHtml(entry.error || "No answer from this model.")}</span>`;
-    return `<div class="compare-col"><h4>${escapeHtml(entry.model)}</h4>${body}</div>`;
+    const heading = `${providerLabel(entry.provider)} · ${entry.model}`;
+    return `<div class="compare-col"><h4>${escapeHtml(heading)}</h4>${body}</div>`;
   }
 
   function bindColumnActions(entries) {
     grid.querySelectorAll("[data-compare-copy]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const entry = entries.find((item) => item.model === button.dataset.compareCopy);
+        const entry = entries.find((item) => item.id === button.dataset.compareCopy);
         if (!entry) return;
         try {
           await navigator.clipboard.writeText(entry.text);
@@ -2885,11 +3006,11 @@ function updateCompactBlock() {
     });
     grid.querySelectorAll("[data-compare-use]").forEach((button) => {
       button.addEventListener("click", () => {
-        const entry = entries.find((item) => item.model === button.dataset.compareUse);
+        const entry = entries.find((item) => item.id === button.dataset.compareUse);
         if (!entry || !output) return;
         output.value = entry.text;
         if (typeof setDirection === "function") setDirection(output, entry.text);
-        setStatus(`Result replaced with the ${entry.model} version.`, false, true);
+        setStatus(`Result replaced with the ${providerLabel(entry.provider)} · ${entry.model} version.`, false, true);
       });
     });
   }
@@ -2902,16 +3023,18 @@ function updateCompactBlock() {
       return;
     }
     const mainModel = payload.model;
+    const mainProvider = currentProvider();
     const rivalModel = rivalSelect.value;
+    const rivalProvider = (providerSelect && providerSelect.value) || mainProvider;
     if (!mainModel || !rivalModel) {
       setStatus("Load the model list and pick two models first.", true);
       return;
     }
-    if (mainModel === rivalModel) {
-      setStatus("Pick a different model to compare against.", true);
+    if (mainModel === rivalModel && mainProvider === rivalProvider) {
+      setStatus("Pick a different model or another provider to compare against.", true);
       return;
     }
-    writeJSON(COMPARE_KEY, rivalModel);
+    writeJSON(COMPARE_KEY, { provider: rivalProvider, model: rivalModel });
 
     compareBusy = true;
     runBtn.disabled = true;
@@ -2920,7 +3043,10 @@ function updateCompactBlock() {
     grid.classList.remove("hidden");
     grid.innerHTML = '<div class="compare-col"><span class="compare-meta">Working…</span></div>';
     try {
-      const entries = await Promise.all([runOne(mainModel), runOne(rivalModel)]);
+      const entries = await Promise.all([
+        runOne(mainModel, mainProvider),
+        runOne(rivalModel, rivalProvider),
+      ]);
       grid.innerHTML = entries.map(renderColumn).join("");
       bindColumnActions(entries);
       const winner = entries.filter((entry) => entry.ok).sort((a, b) => b.text.length - a.text.length)[0];
@@ -2940,7 +3066,21 @@ function updateCompactBlock() {
   });
 
   if (modelSelect) modelSelect.addEventListener("change", syncRivalOptions);
+  if (providerSelect) {
+    providerSelect.addEventListener("change", () => {
+      syncRivalOptions();
+      loadProviderModels(providerSelect.value);
+    });
+  }
+  const ownProviderSelect = document.getElementById("provider");
+  if (ownProviderSelect) {
+    ownProviderSelect.addEventListener("change", () => {
+      syncProviderOptions();
+      syncRivalOptions();
+    });
+  }
   new MutationObserver(syncRivalOptions).observe(modelSelect || document.body, { childList: true });
+  syncProviderOptions();
   syncRivalOptions();
 })();
 
