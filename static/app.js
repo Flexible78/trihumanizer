@@ -2539,3 +2539,136 @@ function updateCompactBlock() {
     else view.innerHTML = '<span class="nikud-note">Press Nikud again for this new result.</span>';
   }).observe(block, { attributes: true, attributeFilter: ["class"] });
 })();
+
+// ---------------------------------------------------------------------------
+// Scenario presets: one click fills the situation and the extra instructions.
+//
+// Additive feature: five everyday Israeli situations (HR, support, landlord,
+// clinic, bank) plus an official-authority preset. A preset only writes into the
+// existing context and instruction fields and fires their change events, so
+// autosave and every existing behaviour keep working. Nothing is sent directly.
+// ---------------------------------------------------------------------------
+(function initScenarioPresets() {
+  const context = document.getElementById("context");
+  const instruction = document.getElementById("customInstruction");
+  if (!context || !instruction) return;
+
+  const PRESET_KEY = "triHumanizerPresetV1";
+
+  const PRESETS = [
+    {
+      id: "hr",
+      label: "HR / interview",
+      context:
+        "Reply to a recruiter or HR manager about a job opening: interview scheduling, salary expectations, availability, work permit and experience questions.",
+      instruction:
+        "Confident but polite professional tone. Keep it short, answer every question directly, never invent experience, offer concrete availability, and end with a clear next step.",
+    },
+    {
+      id: "support",
+      label: "Support / service",
+      context:
+        "Message to a company support desk or service provider about a problem with an order, device, subscription or bill.",
+      instruction:
+        "Calm, factual and firm. State the problem, the facts (dates, numbers, amounts), what was already tried, and exactly what outcome is expected and by when. No emotion, no threats.",
+    },
+    {
+      id: "landlord",
+      label: "Landlord / rent",
+      context:
+        "Message to a landlord, real-estate agent or building committee about rent, repairs, contract terms, deposit or moving dates.",
+      instruction:
+        "Friendly but businesslike. Reference the contract and agreed dates, keep every commitment measurable, and ask for written confirmation of what was agreed.",
+    },
+    {
+      id: "clinic",
+      label: "Clinic / doctor",
+      context:
+        "Message to a clinic, health fund or doctor about an appointment, referral, prescription, test results or a reimbursement request.",
+      instruction:
+        "Simple, clear and respectful. Describe symptoms or the request plainly, include relevant dates and document names, ask one clear question, and avoid medical self-diagnosis.",
+    },
+    {
+      id: "bank",
+      label: "Bank / finance",
+      context:
+        "Message to a bank, insurance company or accountant about an account, transfer, fee, loan or a document they requested.",
+      instruction:
+        "Formal and precise. Use exact amounts, dates and reference numbers, avoid slang, state the requested action clearly and ask which documents are still missing.",
+    },
+    {
+      id: "official",
+      label: "Official authority",
+      context:
+        "Message to a government office or authority (municipality, immigration, tax, utilities) about a request, form, appointment or an appeal.",
+      instruction:
+        "Strictly formal and impersonal. Open with the subject of the request, list the facts in order, reference case or ID numbers, and close with the requested decision and contact details.",
+    },
+  ];
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".preset-row{display:block;margin-top:12px}" +
+    ".preset-row .preset-label{display:block;font-size:12px;font-weight:600;margin-bottom:6px}" +
+    ".preset-chips{display:flex;gap:6px;flex-wrap:wrap}" +
+    ".preset-chips button{font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer}" +
+    ".preset-chips button.active{box-shadow:inset 0 0 0 2px currentColor}" +
+    ".preset-row .help{display:block;margin-top:6px;font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  const wrap = document.createElement("div");
+  wrap.className = "preset-row";
+  wrap.innerHTML =
+    '<span class="preset-label">Scenario presets</span><span class="preset-chips" id="presetChips"></span>' +
+    '<span class="help">One click fills the situation and the extra instructions below. You can still edit both by hand.</span>';
+  (context.parentElement || instruction.parentElement).insertBefore(wrap, context);
+
+  const chips = document.getElementById("presetChips");
+
+  function markActive(id) {
+    chips.querySelectorAll("button").forEach((chip) => {
+      chip.classList.toggle("active", chip.dataset.preset === id);
+    });
+  }
+
+  function applyPreset(preset) {
+    context.value = preset.context;
+    instruction.value = preset.instruction;
+    // Reuse the existing autosave and validation wiring instead of duplicating it.
+    context.dispatchEvent(new Event("change", { bubbles: true }));
+    instruction.dispatchEvent(new Event("change", { bubbles: true }));
+    writeJSON(PRESET_KEY, preset.id);
+    markActive(preset.id);
+    setStatus(`Preset applied: ${preset.label}.`, false, true);
+  }
+
+  PRESETS.forEach((preset) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "ghost";
+    chip.dataset.preset = preset.id;
+    chip.textContent = preset.label;
+    chip.title = preset.context;
+    chip.addEventListener("click", () => applyPreset(preset));
+    chips.appendChild(chip);
+  });
+
+  const clearChip = document.createElement("button");
+  clearChip.type = "button";
+  clearChip.className = "ghost";
+  clearChip.dataset.preset = "none";
+  clearChip.textContent = "Clear";
+  clearChip.addEventListener("click", () => {
+    context.value = "";
+    instruction.value = "";
+    context.dispatchEvent(new Event("change", { bubbles: true }));
+    instruction.dispatchEvent(new Event("change", { bubbles: true }));
+    writeJSON(PRESET_KEY, "");
+    markActive("none");
+    setStatus("Situation and instructions cleared.", false, true);
+  });
+  chips.appendChild(clearChip);
+
+  // Only highlight the remembered preset; never overwrite what the user typed.
+  markActive(String(readJSON(PRESET_KEY, "") || "none"));
+})();
