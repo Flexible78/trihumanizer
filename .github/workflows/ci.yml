@@ -63,3 +63,22 @@ jobs:
       - name: Verify no .venv / databases / archives tracked
         run: |
           git ls-files | grep -E "\.venv/|history\.db|\.zip$|\.env$" && exit 1 || echo "Repo hygiene OK"
+
+      - name: Dependency vulnerability audit
+        run: |
+          pip install pip-audit
+          pip-audit --requirement requirements.txt --strict
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # gitleaks needs the whole history to scan past commits, not just HEAD.
+          fetch-depth: 0
+
+      - name: Credential scan with gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml

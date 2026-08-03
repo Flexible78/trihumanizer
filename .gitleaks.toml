@@ -1,0 +1,24 @@
+# gitleaks configuration for TriHumanizer.
+#
+# The default rule set is used as is. The only addition is an allowlist for the
+# deliberately fake credentials the tests need: llm_client is verified by feeding
+# it a key-shaped string and checking the string never reaches an error message,
+# so that fixture has to live in the repository.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake credential fixtures used by the redaction tests"
+regexes = [
+  '''sk-<32-fake-chars>''',
+  '''test-dummy-key-not-a-secret''',
+]
+
+[[allowlists]]
+description = "Files that quote the fake fixtures on purpose"
+paths = [
+  '''tests/.*''',
+  '''SECRET_SCAN_REPORT\.md''',
+  '''\.github/workflows/ci\.yml''',
+  '''\.gitleaks\.toml''',
+]
