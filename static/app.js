@@ -2317,3 +2317,74 @@ function updateCompactBlock() {
     return payload;
   };
 })();
+
+// ---------------------------------------------------------------------------
+// Reply context: the incoming message the user is answering.
+//
+// Additive feature: a collapsible field for the message from the other side.
+// It is sent as "conversation" and used by the prompt as background only - it is
+// never translated or copied into the output, but it makes replies answer the
+// actual questions and keep the same names, dates and tone. Stored per browser
+// and cleared with one button.
+// ---------------------------------------------------------------------------
+(function initReplyContext() {
+  const host =
+    document.getElementById("glossaryTerms")?.parentElement ||
+    document.getElementById("customInstruction")?.parentElement;
+  if (!host || typeof selectedPayload !== "function") return;
+
+  const REPLY_KEY = "triHumanizerReplyContextV1";
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".reply-context{display:block;margin-top:12px}" +
+    ".reply-context summary{cursor:pointer;font-size:12px;font-weight:600}" +
+    ".reply-context textarea{width:100%;box-sizing:border-box;min-height:96px;margin-top:6px}" +
+    ".reply-context .reply-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}" +
+    ".reply-context .help{font-size:11px;opacity:.75}" +
+    ".reply-context button{font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer}";
+  document.head.appendChild(style);
+
+  const wrap = document.createElement("details");
+  wrap.className = "reply-context";
+  wrap.innerHTML =
+    "<summary>Message you are replying to (optional)</summary>" +
+    '<textarea id="replyContext" placeholder="Paste the email or message from the other side. It is never translated - it only makes your reply answer the right questions."></textarea>' +
+    '<span class="reply-row"><button type="button" class="ghost" id="clearReplyContextBtn">Clear</button>' +
+    '<span class="help" id="replyContextInfo"></span></span>';
+  host.appendChild(wrap);
+
+  const field = document.getElementById("replyContext");
+  const info = document.getElementById("replyContextInfo");
+  const clearBtn = document.getElementById("clearReplyContextBtn");
+
+  function renderInfo() {
+    const value = field.value.trim();
+    info.textContent = value ? `${value.length} chars attached to every request` : "Empty - nothing is attached";
+    if (value) wrap.setAttribute("open", "open");
+  }
+
+  field.value = String(readJSON(REPLY_KEY, "") || "");
+  renderInfo();
+
+  field.addEventListener("input", () => {
+    writeJSON(REPLY_KEY, field.value);
+    const value = field.value.trim();
+    info.textContent = value ? `${value.length} chars attached to every request` : "Empty - nothing is attached";
+  });
+
+  clearBtn.addEventListener("click", () => {
+    field.value = "";
+    writeJSON(REPLY_KEY, "");
+    renderInfo();
+    setStatus("Reply context cleared.", false, true);
+  });
+
+  const basePayload = selectedPayload;
+  selectedPayload = function payloadWithConversation() {
+    const payload = basePayload();
+    const value = field.value.trim();
+    if (value) payload.conversation = value.slice(0, 4000);
+    return payload;
+  };
+})();

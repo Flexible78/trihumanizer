@@ -156,6 +156,30 @@ must repeat the value of the requested target language.
 """
 
 
+def _conversation_rule(payload: dict) -> str:
+    """Optional extra rule: the incoming message we are replying to.
+
+    Filled from the "Message you are replying to" field in the UI. Empty field
+    means the prompt stays byte-identical to before.
+    """
+    incoming = str(payload.get("conversation") or "").strip()
+    if not incoming:
+        return ""
+    incoming = incoming[:4000]
+    return f"""
+
+CONVERSATION CONTEXT (the message the user is replying to):
+<INCOMING_MESSAGE>
+{incoming}
+</INCOMING_MESSAGE>
+Treat the incoming message as background only. Never translate, quote in full or
+copy it into any output field. Use it to answer every question it actually asks,
+to match its level of formality, to reuse the names, dates, numbers and terms it
+uses, and to avoid repeating information the other side already gave. The output
+must still be built only from the user's own text between <USER_TEXT> tags.
+"""
+
+
 def _glossary_rule(payload: dict) -> str:
     """Optional extra rule: terms that must never be translated or reworded.
 
@@ -213,7 +237,8 @@ def build_messages(payload: dict) -> list[dict]:
             "content": _common_system(payload)
             + _multi_language_rule(payload)
             + _transliteration_rule(payload)
-            + _glossary_rule(payload),
+            + _glossary_rule(payload)
+            + _conversation_rule(payload),
         },
         {
             "role": "user",
