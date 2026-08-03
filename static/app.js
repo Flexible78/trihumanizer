@@ -1635,3 +1635,173 @@ function updateCompactBlock() {
 
   updateCompactBlock();
 })();
+
+// ---------------------------------------------------------------------------
+// Tri-language result switcher (RU / EN / HE).
+//
+// Additive feature: three pills above the final translation switch the visible
+// result between Russian, English and Hebrew. A language that was already
+// produced for the current source text is cached in memory, so switching back
+// is instant and costs no tokens. Nothing in the existing pipeline is changed:
+// a missing language is requested through the same /api/process contract.
+// ---------------------------------------------------------------------------
+(function initTranslationLanguageSwitch() {
+  const block = document.getElementById("translationBlock");
+  const output = document.getElementById("humanizedTranslation");
+  if (!block || !output) return;
+
+  const LANGS = [
+    { code: "ru", label: "RU", title: "Русский" },
+    { code: "en", label: "EN", title: "English" },
+    { code: "he", label: "HE", title: "עברית" },
+  ];
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".lang-switch{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 8px}" +
+    ".lang-switch .lang-btn{padding:4px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.05em;cursor:pointer}" +
+    ".lang-switch .lang-btn.active{box-shadow:inset 0 0 0 2px currentColor}" +
+    ".lang-switch .lang-btn[disabled]{opacity:.5;cursor:progress}" +
+    ".lang-switch .lang-hint{font-size:11px;opacity:.7}";
+  document.head.appendChild(style);
+
+  const row = document.createElement("div");
+  row.className = "lang-switch";
+  row.id = "translationLangSwitch";
+
+  const hint = document.createElement("span");
+  hint.className = "lang-hint";
+
+  const buttons = new Map();
+  const cache = new Map();
+  let cacheKey = "";
+  let switchBusy = false;
+
+  function scriptLanguage(text) {
+    const value = String(text || "");
+    if (/[\u0590-\u05FF]/.test(value)) return "he";
+    if (/[\u0400-\u04FF]/.test(value)) return "ru";
+    if (/[A-Za-z]/.test(value)) return "en";
+    return "";
+  }
+
+  function sourceKey() {
+    const field = document.getElementById("sourceText");
+    return (field ? field.value : "").trim();
+  }
+
+  function syncCacheKey() {
+    const key = sourceKey();
+    if (key !== cacheKey) {
+      cache.clear();
+      cacheKey = key;
+    }
+  }
+
+  function markActive(lang) {
+    buttons.forEach((button, code) => button.classList.toggle("active", code === lang));
+  }
+
+  function updateHint() {
+    const ready = Array.from(cache.keys()).map((code) => code.toUpperCase()).sort();
+    hint.textContent = ready.length > 1 ? `ready: ${ready.join(" · ")}` : "";
+  }
+
+  function captureCurrent() {
+    syncCacheKey();
+    const text = output.value;
+    const lang = scriptLanguage(text.trim());
+    if (text.trim() && lang) cache.set(lang, text);
+    updateHint();
+    return lang;
+  }
+
+  function display(lang, text) {
+    output.value = text;
+    if (typeof setDirection === "function") setDirection(output, text);
+    markActive(lang);
+    updateHint();
+  }
+
+  async function fetchLanguage(lang, button) {
+    const payload = selectedPayload();
+    if (!payload.text) {
+      setStatus("Enter or paste text first.", true);
+      return;
+    }
+    if (!payload.model) {
+      setStatus("Open model settings and choose a model.", true);
+      return;
+    }
+    payload.target_language = lang;
+    payload.action = "translate";
+
+    switchBusy = true;
+    button.disabled = true;
+    const previousLabel = button.textContent;
+    button.textContent = "…";
+    setStatus(`Translating into ${lang.toUpperCase()}…`);
+    try {
+      const response = await fetch("/api/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        if (typeof showAuthOverlay === "function") showAuthOverlay();
+        setStatus("Authentication required.", true);
+        return;
+      }
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "The model did not return a translation.");
+      }
+      const result = data.result || {};
+      const text = result.humanized_translation || result.humanized_original || result.body || "";
+      if (!text.trim()) throw new Error("The model returned an empty translation.");
+      syncCacheKey();
+      cache.set(lang, text);
+      display(lang, text);
+      setStatus(`Ready in ${lang.toUpperCase()}. Model: ${data.model || payload.model}.`, false, true);
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      switchBusy = false;
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  }
+
+  LANGS.forEach((lang) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost lang-btn";
+    button.dataset.lang = lang.code;
+    button.textContent = lang.label;
+    button.title = lang.title;
+    button.addEventListener("click", async () => {
+      if (switchBusy) return;
+      captureCurrent();
+      const cached = cache.get(lang.code);
+      if (cached) {
+        display(lang.code, cached);
+        setStatus(`Showing the ${lang.label} version (cached, no new request).`, false, true);
+        return;
+      }
+      await fetchLanguage(lang.code, button);
+    });
+    buttons.set(lang.code, button);
+    row.appendChild(button);
+  });
+  row.appendChild(hint);
+  block.insertBefore(row, output);
+
+  // showResult() toggles classes on this block on every render, so observing the
+  // attribute change keeps the switcher in sync without editing existing code.
+  new MutationObserver(() => {
+    const lang = captureCurrent();
+    if (lang) markActive(lang);
+  }).observe(block, { attributes: true, attributeFilter: ["class"] });
+
+  captureCurrent();
+})();
