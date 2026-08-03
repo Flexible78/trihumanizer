@@ -1696,7 +1696,7 @@ function updateCompactBlock() {
   if (!block || !output) return;
 
   const LANGS = [
-    { code: "ru", label: "RU", title: "Русский" },
+    { code: "ru", label: "RU", title: "Russian" },
     { code: "en", label: "EN", title: "English" },
     { code: "he", label: "HE", title: "עברית" },
   ];
@@ -2093,7 +2093,7 @@ function updateCompactBlock() {
       lines.push(`<span class="translit-line"><span class="translit-tag">LATIN</span>${escapeHtml(latin)}</span>`);
     }
     if (cyrillic) {
-      lines.push(`<span class="translit-line"><span class="translit-tag">КИРИЛЛИЦА</span>${escapeHtml(cyrillic)}</span>`);
+    lines.push(`<span class="translit-line"><span class="translit-tag">CYRILLIC</span>${escapeHtml(cyrillic)}</span>`);
     }
     lines.push('<span class="translit-note">Pronunciation guide for the Hebrew above · cached for this text.</span>');
     view.innerHTML = lines.join("");
@@ -2488,7 +2488,7 @@ function updateCompactBlock() {
   style.textContent =
     ".nikud-view{display:none;margin:8px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
     ".nikud-view.visible{display:block}" +
-    ".nikud-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap}" +
+    ".nikud-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap;overflow-wrap:anywhere}" +
     ".nikud-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}" +
     ".nikud-row button{font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer}" +
     ".nikud-note{font-size:11px;opacity:.75}";
@@ -2776,13 +2776,14 @@ function updateCompactBlock() {
   style.textContent =
     ".compare-panel{margin-top:12px;padding-top:10px;border-top:1px solid rgba(127,127,127,.25)}" +
     ".compare-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
-    ".compare-row select{max-width:260px}" +
+    ".compare-row select{max-width:260px;min-width:0}" +
+    "@media (max-width:520px){.compare-row select{max-width:100%;width:100%}.compare-row button{width:100%}}" +
     ".compare-row button{font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer}" +
     ".compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}" +
     "@media (max-width:760px){.compare-grid{grid-template-columns:1fr}}" +
     ".compare-col{padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
     ".compare-col h4{margin:0 0 6px;font-size:12px;letter-spacing:.03em}" +
-    ".compare-col .compare-text{display:block;white-space:pre-wrap;font-size:14px;line-height:1.6}" +
+    ".compare-col .compare-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6}" +
     ".compare-col .compare-meta{display:block;margin-top:6px;font-size:11px;opacity:.7}" +
     ".compare-note{display:block;margin-top:6px;font-size:11px;opacity:.75}";
   document.head.appendChild(style);
@@ -3100,8 +3101,8 @@ function updateCompactBlock() {
   style.textContent =
     ".hebrew-tools-view{display:none;margin:8px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
     ".hebrew-tools-view.visible{display:block}" +
-    ".hebrew-tools-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap}" +
-    ".hebrew-tools-line{display:block;margin-bottom:4px;font-size:14px;line-height:1.7}" +
+    ".hebrew-tools-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap;overflow-wrap:anywhere}" +
+    ".hebrew-tools-line{display:block;margin-bottom:4px;font-size:14px;line-height:1.7;overflow-wrap:anywhere}" +
     ".hebrew-tools-tag{display:inline-block;min-width:74px;font-size:10px;letter-spacing:.06em;opacity:.7}" +
     ".hebrew-tools-note{display:block;font-size:11px;opacity:.75}";
   document.head.appendChild(style);
@@ -3217,7 +3218,7 @@ function updateCompactBlock() {
       }
       if (cyrillic) {
         parts.push(
-          `<span class="hebrew-tools-line"><span class="hebrew-tools-tag">КИРИЛЛИЦА</span>${escapeHtml(cyrillic)}</span>`
+          `<span class="hebrew-tools-line"><span class="hebrew-tools-tag">CYRILLIC</span>${escapeHtml(cyrillic)}</span>`
         );
       }
       parts.push('<span class="hebrew-tools-note">Pronunciation guide for the Hebrew above · cached for this text.</span>');
@@ -3543,7 +3544,7 @@ function updateCompactBlock() {
   if (typeof selectedPayload !== "function") return;
 
   const LANGS = [
-    { code: "ru", label: "RU", title: "Русский" },
+    { code: "ru", label: "RU", title: "Russian" },
     { code: "en", label: "EN", title: "English" },
     { code: "he", label: "HE", title: "עברית" },
   ];

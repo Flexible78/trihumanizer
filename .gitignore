@@ -48,3 +48,7 @@ desktop.ini
 # Locally saved provider/model selection and API keys (never commit)
 data/settings.json
 data/settings.json.tmp
+
+# ---- Personal interview material (kept local, never pushed) ----
+docs/self_intro_he_en_infra_engineer.md
+docs/INTERVIEW_DEFENCE.md

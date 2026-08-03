@@ -75,7 +75,7 @@ def run_ui_check() -> None:
 
 
 def main() -> int:
-    print("TriHumanizer test suite — 1.6.3")
+    print("TriHumanizer test suite — 1.7.0")
     print("=" * 50)
 
     run_module("self_test.py")
