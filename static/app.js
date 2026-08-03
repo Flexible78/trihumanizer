@@ -1464,6 +1464,20 @@ function bindEvents() {
   document.querySelectorAll(".copyBtn").forEach((btn) =>
     btn.addEventListener("click", () => flashButton(btn, () => writeClipboardText($(btn.dataset.target).value)))
   );
+  // These two Copy buttons existed in the markup but had no click handler at
+  // all, so copying a composed letter or a research answer silently did nothing.
+  const copyEmailButton = document.getElementById("copyEmailBtn");
+  if (copyEmailButton) {
+    copyEmailButton.addEventListener("click", () =>
+      flashButton(copyEmailButton, () => writeClipboardText(sectionText("emailBodyText")))
+    );
+  }
+  const copyResearchButton = document.getElementById("copyResearchBtn");
+  if (copyResearchButton) {
+    copyResearchButton.addEventListener("click", () =>
+      flashButton(copyResearchButton, () => writeClipboardText(sectionText("researchAnswer")))
+    );
+  }
   document.querySelectorAll(".toSourceBtn").forEach((btn) =>
     btn.addEventListener("click", () => useAsSource($(btn.dataset.target).value))
   );
@@ -3241,19 +3255,38 @@ function updateCompactBlock() {
     let busy = false;
 
     function read() {
-      return String((config.kind === "value" ? target.value : target.textContent) || "");
+      return String((config.kind === "text" ? target.textContent : target.value) || "");
     }
 
     function write(text) {
-      if (config.kind === "value") {
-        target.value = text;
-        if (typeof setDirection === "function") setDirection(target, text);
+      const rtl = /[\u0590-\u05FF]/.test(text);
+      if (config.kind === "text") {
+        target.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+        target.style.direction = rtl ? "rtl" : "ltr";
+        target.style.textAlign = rtl ? "right" : "left";
         return;
       }
-      const rtl = /[\u0590-\u05FF]/.test(text);
-      target.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
-      target.style.direction = rtl ? "rtl" : "ltr";
-      target.style.textAlign = rtl ? "right" : "left";
+      target.value = text;
+      if (typeof setDirection === "function") setDirection(target, text);
+      if (config.kind !== "email") return;
+      // The letter on screen is rendered HTML, so it has to be rebuilt as well,
+      // otherwise switching the language changed nothing the user can see.
+      const composed = document.getElementById("emailComposed");
+      if (!composed) return;
+      const lines = text.split("\n");
+      let subject = "";
+      if (/^\s*subject\s*:/i.test(lines[0] || "")) {
+        subject = lines.shift().replace(/^\s*subject\s*:\s*/i, "").trim();
+      }
+      const body = lines.join("\n").trim();
+      const html = [];
+      if (subject) {
+        html.push(`<p class="email-subject"><strong>Subject:</strong> ${escapeHtml(subject)}</p>`);
+      }
+      html.push(`<div class="email-body">${escapeHtml(body).replace(/\n/g, "<br>")}</div>`);
+      composed.innerHTML = html.join("");
+      composed.style.direction = rtl ? "rtl" : "ltr";
+      composed.style.textAlign = rtl ? "right" : "left";
     }
 
     function markActive(lang) {
@@ -3393,7 +3426,11 @@ function updateCompactBlock() {
       row.appendChild(button);
     });
     row.appendChild(hint);
-    (target.parentElement || block).insertBefore(row, target);
+    // Right under the section header instead of at the bottom of the block, so
+    // the three pills read as a control for that section at first glance.
+    const anchor = block.querySelector(".button-row");
+    if (anchor && anchor.parentElement === block) block.insertBefore(row, anchor.nextSibling);
+    else block.insertBefore(row, block.firstChild);
 
     new MutationObserver(syncFromRender).observe(block, {
       attributes: true,
@@ -3404,7 +3441,7 @@ function updateCompactBlock() {
   }
 
   [
-    { blockId: "emailBlock", targetId: "emailBodyText", kind: "value" },
+    { blockId: "emailBlock", targetId: "emailBodyText", kind: "email" },
     { blockId: "researchBlock", targetId: "researchAnswer", kind: "text" },
     { blockId: "originalBlock", targetId: "humanizedOriginal", kind: "value" },
   ].forEach(attach);
