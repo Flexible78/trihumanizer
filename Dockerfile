@@ -2,7 +2,7 @@
 #
 # The hosted deployment is serverless, so this file covers what Vercel does not:
 # a VPS, a homelab box, or a reviewer who wants the whole app in one command.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
