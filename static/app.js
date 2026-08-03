@@ -2246,3 +2246,74 @@ function updateCompactBlock() {
 
   renderMeter();
 })();
+
+// ---------------------------------------------------------------------------
+// Protected terms glossary: words the model must never translate or reword.
+//
+// Additive feature: a comma separated field (product names, brands, ticket ids,
+// people, stack names). The list is stored locally and attached to every
+// request as "glossary"; the backend only adds a prompt section when the list
+// is non-empty. selectedPayload is wrapped instead of edited, so all existing
+// call sites keep working untouched.
+// ---------------------------------------------------------------------------
+(function initProtectedTerms() {
+  const host =
+    document.getElementById("customInstruction")?.parentElement ||
+    document.getElementById("context")?.parentElement;
+  if (!host || typeof selectedPayload !== "function") return;
+
+  const GLOSSARY_KEY = "triHumanizerGlossaryV1";
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".glossary-field{display:block;margin-top:12px}" +
+    ".glossary-field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px}" +
+    ".glossary-field input{width:100%;box-sizing:border-box}" +
+    ".glossary-field .help{display:block;margin-top:4px;font-size:11px;opacity:.75}" +
+    ".glossary-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}" +
+    ".glossary-chip{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(127,127,127,.16)}";
+  document.head.appendChild(style);
+
+  const wrap = document.createElement("div");
+  wrap.className = "glossary-field";
+  wrap.innerHTML =
+    '<label for="glossaryTerms">Do not translate (protected terms)</label>' +
+    '<input id="glossaryTerms" type="text" placeholder="Kubernetes, TriHumanizer, INC-4821, Mistral" autocomplete="off">' +
+    '<span class="help">Comma separated. These stay untouched in every language, including Hebrew.</span>' +
+    '<span class="glossary-chips" id="glossaryChips"></span>';
+  host.appendChild(wrap);
+
+  const input = document.getElementById("glossaryTerms");
+  const chips = document.getElementById("glossaryChips");
+
+  function parseTerms(value) {
+    return String(value || "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 60);
+  }
+
+  function renderChips() {
+    const terms = parseTerms(input.value);
+    chips.innerHTML = terms
+      .map((term) => `<span class="glossary-chip">${escapeHtml(term)}</span>`)
+      .join("");
+  }
+
+  input.value = String(readJSON(GLOSSARY_KEY, "") || "");
+  renderChips();
+
+  input.addEventListener("input", () => {
+    writeJSON(GLOSSARY_KEY, input.value);
+    renderChips();
+  });
+
+  const basePayload = selectedPayload;
+  selectedPayload = function payloadWithGlossary() {
+    const payload = basePayload();
+    const terms = parseTerms(input.value);
+    if (terms.length) payload.glossary = terms;
+    return payload;
+  };
+})();

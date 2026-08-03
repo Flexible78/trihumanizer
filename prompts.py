@@ -156,6 +156,33 @@ must repeat the value of the requested target language.
 """
 
 
+def _glossary_rule(payload: dict) -> str:
+    """Optional extra rule: terms that must never be translated or reworded.
+
+    Filled from the "Do not translate" field in the UI. Empty field means the
+    prompt stays byte-identical to before.
+    """
+    raw = payload.get("glossary")
+    if isinstance(raw, (list, tuple)):
+        terms = [str(item).strip() for item in raw if str(item).strip()]
+    else:
+        terms = [part.strip() for part in str(raw or "").replace("\n", ",").split(",") if part.strip()]
+    terms = terms[:60]
+    if not terms:
+        return ""
+    listed = "\n".join(f"- {term}" for term in terms)
+    return f"""
+
+PROTECTED TERMS (do not translate, do not inflect, do not reword):
+{listed}
+Keep every protected term exactly as written above, with the same spelling,
+capitalisation and Latin letters, in every output field - including the Hebrew
+and Russian ones. Never transliterate, translate or abbreviate them. If a
+protected term needs a grammatical connector, add the connector around the term
+instead of changing the term itself.
+"""
+
+
 def _transliteration_rule(payload: dict) -> str:
     """Optional extra rule: Latin and Cyrillic transcription of Hebrew output.
 
@@ -185,7 +212,8 @@ def build_messages(payload: dict) -> list[dict]:
             "role": "system",
             "content": _common_system(payload)
             + _multi_language_rule(payload)
-            + _transliteration_rule(payload),
+            + _transliteration_rule(payload)
+            + _glossary_rule(payload),
         },
         {
             "role": "user",
