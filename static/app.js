@@ -2860,3 +2860,120 @@ function updateCompactBlock() {
   new MutationObserver(syncRivalOptions).observe(modelSelect || document.body, { childList: true });
   syncRivalOptions();
 })();
+
+// ---------------------------------------------------------------------------
+// History tools: instant search plus JSON and CSV export.
+//
+// Additive feature: a search box filters the rendered history list live, and two
+// buttons export the locally stored history as JSON or as spreadsheet-ready CSV.
+// Reading is done from the same storage key the app already uses, and filtering
+// only toggles visibility, so the existing history rendering stays untouched.
+// ---------------------------------------------------------------------------
+(function initHistoryTools() {
+  const list = document.getElementById("historyList");
+  if (!list) return;
+
+  const historyKey = (typeof STORAGE === "object" && STORAGE && STORAGE.history) || "triHumanizerHistory";
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".history-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}" +
+    ".history-tools input{flex:1 1 180px;min-width:140px;box-sizing:border-box}" +
+    ".history-tools button{font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer}" +
+    ".history-tools .history-count{font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  const tools = document.createElement("div");
+  tools.className = "history-tools";
+  tools.innerHTML =
+    '<input id="historySearch" type="search" placeholder="Search history (text, language, model)" autocomplete="off">' +
+    '<button type="button" class="ghost" id="historyExportJsonBtn">Export JSON</button>' +
+    '<button type="button" class="ghost" id="historyExportCsvBtn">Export CSV</button>' +
+    '<span class="history-count" id="historyCount"></span>';
+  list.parentElement.insertBefore(tools, list);
+
+  const search = document.getElementById("historySearch");
+  const counter = document.getElementById("historyCount");
+
+  function entries() {
+    const stored = readJSON(historyKey, []);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function applyFilter() {
+    const needle = search.value.trim().toLowerCase();
+    const items = Array.from(list.children);
+    let shown = 0;
+    items.forEach((item) => {
+      const match = !needle || item.textContent.toLowerCase().includes(needle);
+      item.style.display = match ? "" : "none";
+      if (match) shown += 1;
+    });
+    counter.textContent = needle
+      ? `${shown} of ${items.length} shown · ${entries().length} saved`
+      : `${entries().length} saved`;
+  }
+
+  function download(name, mime, content) {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function stamp() {
+    return new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  }
+
+  function flatten(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+
+  function toCsv(rows) {
+    const columns = [];
+    rows.forEach((row) => {
+      Object.keys(row || {}).forEach((key) => {
+        if (!columns.includes(key)) columns.push(key);
+      });
+    });
+    const escape = (value) => `"${flatten(value).replace(/"/g, '""')}"`;
+    const lines = [columns.map(escape).join(",")];
+    rows.forEach((row) => {
+      lines.push(columns.map((column) => escape((row || {})[column])).join(","));
+    });
+    // BOM keeps Excel happy with Hebrew and Cyrillic.
+    return "\uFEFF" + lines.join("\r\n");
+  }
+
+  document.getElementById("historyExportJsonBtn").addEventListener("click", () => {
+    const rows = entries();
+    if (!rows.length) {
+      setStatus("History is empty - nothing to export.", true);
+      return;
+    }
+    download(`trihumanizer-history-${stamp()}.json`, "application/json", JSON.stringify(rows, null, 2));
+    setStatus(`Exported ${rows.length} history entr${rows.length === 1 ? "y" : "ies"} as JSON.`, false, true);
+  });
+
+  document.getElementById("historyExportCsvBtn").addEventListener("click", () => {
+    const rows = entries();
+    if (!rows.length) {
+      setStatus("History is empty - nothing to export.", true);
+      return;
+    }
+    download(`trihumanizer-history-${stamp()}.csv`, "text/csv", toCsv(rows));
+    setStatus(`Exported ${rows.length} history entr${rows.length === 1 ? "y" : "ies"} as CSV.`, false, true);
+  });
+
+  search.addEventListener("input", applyFilter);
+  // Re-apply the active filter whenever the list is re-rendered.
+  new MutationObserver(applyFilter).observe(list, { childList: true });
+  applyFilter();
+})();
