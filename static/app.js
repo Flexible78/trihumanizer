@@ -1719,8 +1719,34 @@ function updateCompactBlock() {
   function display(lang, text) {
     output.value = text;
     if (typeof setDirection === "function") setDirection(output, text);
-    markActive(lang);
+    // Never let a pill lie: highlight the language that is really on screen.
+    markActive(scriptLanguage(text.trim()) || lang);
     updateHint();
+  }
+
+  // A value is only accepted as "this language" when it is actually written in
+  // that script. This is what stops a Hebrew answer from landing under RU.
+  function matchesLanguage(text, lang) {
+    const detected = scriptLanguage(String(text || "").trim());
+    return Boolean(detected) && detected === lang;
+  }
+
+  async function postProcess(payload) {
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      setStatus("Authentication required.", true);
+      return null;
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "The model did not return a translation.");
+    }
+    return data;
   }
 
   async function fetchLanguage(lang, button) {
@@ -1745,38 +1771,50 @@ function updateCompactBlock() {
     button.textContent = "…";
     setStatus(`Translating into ${lang.toUpperCase()}…`);
     try {
-      const response = await fetch("/api/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.status === 401) {
-        if (typeof showAuthOverlay === "function") showAuthOverlay();
-        setStatus("Authentication required.", true);
-        return;
+      let text = "";
+      let usedModel = payload.model;
+      for (const attempt of [1, 2]) {
+        if (attempt === 2) {
+          // The model answered in the wrong script. Ask again for this single
+          // language, without the bundle, which is a much narrower request.
+          payload.multi_language = false;
+          setStatus(`Retrying ${lang.toUpperCase()}…`);
+        }
+        const data = await postProcess(payload);
+        if (!data) return;
+        usedModel = data.model || payload.model;
+        const result = data.result || {};
+        const bundle =
+          result.translations && typeof result.translations === "object" ? result.translations : {};
+        syncCacheKey();
+        // Cache only the values that really are in their own language.
+        LANGS.forEach((item) => {
+          const value = String(bundle[item.code] || "").trim();
+          if (value && matchesLanguage(value, item.code)) cache.set(item.code, value);
+        });
+        text =
+          [
+            String(bundle[lang] || ""),
+            String(result.humanized_translation || ""),
+            String(result.humanized_original || ""),
+            String(result.body || ""),
+          ].find((value) => matchesLanguage(value, lang)) || "";
+        if (text) break;
       }
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "The model did not return a translation.");
+      if (!text) {
+        const cached = cache.get(lang);
+        if (cached) {
+          display(lang, cached);
+          setStatus(`Showing the cached ${lang.toUpperCase()} version.`, false, true);
+          return;
+        }
+        throw new Error(
+          `The model answered in another language instead of ${lang.toUpperCase()}. Try again or pick a stronger model.`
+        );
       }
-      const result = data.result || {};
-      const bundle =
-        result.translations && typeof result.translations === "object" ? result.translations : {};
-      const text =
-        String(bundle[lang] || "").trim() ||
-        result.humanized_translation ||
-        result.humanized_original ||
-        result.body ||
-        "";
-      if (!text.trim()) throw new Error("The model returned an empty translation.");
-      syncCacheKey();
-      LANGS.forEach((item) => {
-        const value = String(bundle[item.code] || "").trim();
-        if (value) cache.set(item.code, value);
-      });
-      cache.set(lang, text);
-      display(lang, text);
-      setStatus(`Ready in ${lang.toUpperCase()}. Model: ${data.model || payload.model}.`, false, true);
+      cache.set(lang, text.trim());
+      display(lang, text.trim());
+      setStatus(`Ready in ${lang.toUpperCase()}. Model: ${usedModel}.`, false, true);
     } catch (error) {
       setStatus(error.message, true);
     } finally {

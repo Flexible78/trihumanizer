@@ -149,10 +149,18 @@ def _multi_language_rule(payload: dict) -> str:
 ADDITIONAL OUTPUT REQUIREMENT (multi-language mode):
 Add one extra key "translations" to the JSON object:
   "translations": {"ru": "...", "en": "...", "he": "..."}
-Each value must carry the same message, rewritten in the selected register, in
-natural Russian, English and Hebrew respectively. Never leave a value empty and
-never mix two languages inside one value. Still fill "humanized_translation": it
-must repeat the value of the requested target language.
+The three values carry the same message in three different languages, and the
+language of each value is fixed by its key, whatever the requested target
+language or the language of the source text is:
+- "ru" must be natural Russian, written in Cyrillic letters only.
+- "en" must be natural English, written in Latin letters only.
+- "he" must be natural Hebrew, written in Hebrew letters only.
+Never copy the same language into two keys, never leave a value empty, never mix
+two languages inside one value, and never answer in the source language just
+because the source was already in one of these three languages. A Hebrew source
+still needs a real Russian "ru" and a real English "en".
+Still fill "humanized_translation": it must repeat the value of the requested
+target language.
 """
 
 
