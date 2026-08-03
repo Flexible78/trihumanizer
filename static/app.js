@@ -973,6 +973,34 @@ function primaryResultText() {
   );
 }
 
+// "Copy result" must hand over everything that is on screen, not only the first
+// filled field. Every visible section is collected in the order it is rendered,
+// and the research answer is read as rendered text so its line breaks survive.
+function sectionText(id) {
+  const element = document.getElementById(id);
+  if (!element) return "";
+  if (typeof element.value === "string") return element.value.trim();
+  return String(element.innerText || element.textContent || "").trim();
+}
+
+function visibleResultText() {
+  const sections = [
+    { blockId: "emailBlock", textId: "emailBodyText" },
+    { blockId: "researchBlock", textId: "researchAnswer" },
+    { blockId: "originalBlock", textId: "humanizedOriginal" },
+    { blockId: "literalBlock", textId: "literalTranslation" },
+    { blockId: "translationBlock", textId: "humanizedTranslation" },
+  ];
+  const parts = [];
+  sections.forEach((section) => {
+    const block = document.getElementById(section.blockId);
+    if (!block || block.classList.contains("hidden")) return;
+    const text = sectionText(section.textId);
+    if (text && !parts.includes(text)) parts.push(text);
+  });
+  return parts.join("\n\n") || primaryResultText();
+}
+
 function useAsSource(text) {
   if (!text) return;
   const oldSource = $("sourceLanguage").value;
@@ -1440,7 +1468,7 @@ function bindEvents() {
     btn.addEventListener("click", () => useAsSource($(btn.dataset.target).value))
   );
   $("copyTranslationBtn").addEventListener("click", (event) =>
-    flashButton(event.currentTarget, () => writeClipboardText(primaryResultText()))
+    flashButton(event.currentTarget, () => writeClipboardText(visibleResultText()))
   );
   $("copyAllBtn").addEventListener("click", (event) =>
     flashButton(event.currentTarget, () => writeClipboardText(collectAllResults()))
@@ -3096,9 +3124,11 @@ function updateCompactBlock() {
 
   async function copyResult() {
     const text =
-      typeof primaryResultText === "function"
-        ? primaryResultText()
-        : (document.getElementById("humanizedTranslation") || {}).value || "";
+      typeof visibleResultText === "function"
+        ? visibleResultText()
+        : typeof primaryResultText === "function"
+          ? primaryResultText()
+          : (document.getElementById("humanizedTranslation") || {}).value || "";
     if (!text || !String(text).trim()) {
       setStatus("There is no result to copy yet.", true);
       return;
