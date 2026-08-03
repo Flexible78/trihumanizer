@@ -2388,3 +2388,154 @@ function updateCompactBlock() {
     return payload;
   };
 })();
+
+// ---------------------------------------------------------------------------
+// Nikud: a vocalised copy of the Hebrew result, for reading it aloud.
+//
+// Additive feature: a "Nikud" pill asks the model, through an opt-in nikud flag,
+// for the same Hebrew words with full vowel points. The vocalised text is shown
+// in a read-only RTL panel with its own copy button and is cached per text.
+// ---------------------------------------------------------------------------
+(function initNikudPanel() {
+  const block = document.getElementById("translationBlock");
+  const output = document.getElementById("humanizedTranslation");
+  if (!block || !output || typeof selectedPayload !== "function") return;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".nikud-view{display:none;margin:8px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.10)}" +
+    ".nikud-view.visible{display:block}" +
+    ".nikud-text{display:block;direction:rtl;text-align:right;font-size:18px;line-height:2;white-space:pre-wrap}" +
+    ".nikud-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}" +
+    ".nikud-row button{font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer}" +
+    ".nikud-note{font-size:11px;opacity:.75}";
+  document.head.appendChild(style);
+
+  const view = document.createElement("div");
+  view.className = "nikud-view";
+  view.id = "translationNikudView";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost";
+  button.id = "nikudBtn";
+  button.textContent = "Nikud";
+  button.title = "Show the Hebrew result with vowel points";
+
+  const buttonRow = block.querySelector(".button-row");
+  if (buttonRow) buttonRow.appendChild(button);
+  else block.appendChild(button);
+  block.appendChild(view);
+
+  const cache = new Map();
+  let nikudBusy = false;
+
+  function hasHebrew(text) {
+    return /[\u0590-\u05FF]/.test(String(text || ""));
+  }
+
+  function renderNikud(vocalised) {
+    const value = String(vocalised || "").trim();
+    if (!value) {
+      view.innerHTML = '<span class="nikud-note">The model returned no vocalised text for this result.</span>';
+      return;
+    }
+    view.innerHTML =
+      `<span class="nikud-text" id="nikudText">${escapeHtml(value)}</span>` +
+      '<span class="nikud-row"><button type="button" class="ghost" id="copyNikudBtn">Copy nikud</button>' +
+      '<span class="nikud-note">Same words, vowel points added · cached for this text.</span></span>';
+    const copyBtn = document.getElementById("copyNikudBtn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          if (typeof flashButton === "function") flashButton(copyBtn, "Copied");
+          else setStatus("Vocalised text copied.", false, true);
+        } catch (error) {
+          setStatus("Could not copy the vocalised text.", true);
+        }
+      });
+    }
+  }
+
+  async function fetchNikud(hebrew) {
+    const payload = selectedPayload();
+    if (!payload.model) {
+      setStatus("Open model settings and choose a model.", true);
+      return null;
+    }
+    payload.text = hebrew;
+    payload.action = "translate";
+    payload.source_language = "he";
+    payload.target_language = "he";
+    payload.multi_language = false;
+    payload.transliteration = false;
+    payload.nikud = true;
+    payload.include_literal = false;
+
+    const response = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      if (typeof showAuthOverlay === "function") showAuthOverlay();
+      throw new Error("Authentication required.");
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "The model did not return vocalised text.");
+    }
+    return String((data.result || {}).nikud_text || "");
+  }
+
+  button.addEventListener("click", async () => {
+    if (nikudBusy) return;
+    const visible = view.classList.toggle("visible");
+    button.textContent = visible ? "Hide nikud" : "Nikud";
+    if (!visible) return;
+
+    const hebrew = output.value.trim();
+    if (!hasHebrew(hebrew)) {
+      view.innerHTML =
+        '<span class="nikud-note">Nikud is available for Hebrew results. Switch the result to HE first.</span>';
+      return;
+    }
+    const cached = cache.get(hebrew);
+    if (cached) {
+      renderNikud(cached);
+      return;
+    }
+
+    nikudBusy = true;
+    const previousLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "…";
+    view.innerHTML = '<span class="nikud-note">Adding vowel points…</span>';
+    try {
+      const vocalised = await fetchNikud(hebrew);
+      if (vocalised) {
+        cache.set(hebrew, vocalised);
+        renderNikud(vocalised);
+        setStatus("Nikud ready.", false, true);
+      } else {
+        view.innerHTML = '<span class="nikud-note">Nikud unavailable right now.</span>';
+      }
+    } catch (error) {
+      view.innerHTML = `<span class="nikud-note">${escapeHtml(error.message)}</span>`;
+      setStatus(error.message, true);
+    } finally {
+      nikudBusy = false;
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  });
+
+  // A new result invalidates the visible panel.
+  new MutationObserver(() => {
+    if (!view.classList.contains("visible")) return;
+    const cached = cache.get(output.value.trim());
+    if (cached) renderNikud(cached);
+    else view.innerHTML = '<span class="nikud-note">Press Nikud again for this new result.</span>';
+  }).observe(block, { attributes: true, attributeFilter: ["class"] });
+})();

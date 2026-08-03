@@ -156,6 +156,26 @@ must repeat the value of the requested target language.
 """
 
 
+def _nikud_rule(payload: dict) -> str:
+    """Optional extra rule: a fully vocalised (nikud) copy of the Hebrew text.
+
+    Requested by the "Nikud" button in the result pane. Without the flag the
+    prompt stays byte-identical to before.
+    """
+    if not bool(payload.get("nikud")):
+        return ""
+    return """
+
+ADDITIONAL OUTPUT REQUIREMENT (nikud mode):
+Add one extra key "nikud_text" to the JSON object: the Hebrew text of
+"humanized_translation" (or the Hebrew source text when no translation was
+requested), repeated word for word with full niqqud vowel points. Change no
+word, no order and no punctuation - only add vowel points, dagesh where it
+affects pronunciation, and the shin/sin dot. Use standard modern Israeli
+vocalisation. Leave the value empty when the text has no Hebrew.
+"""
+
+
 def _conversation_rule(payload: dict) -> str:
     """Optional extra rule: the incoming message we are replying to.
 
@@ -238,7 +258,8 @@ def build_messages(payload: dict) -> list[dict]:
             + _multi_language_rule(payload)
             + _transliteration_rule(payload)
             + _glossary_rule(payload)
-            + _conversation_rule(payload),
+            + _conversation_rule(payload)
+            + _nikud_rule(payload),
         },
         {
             "role": "user",
