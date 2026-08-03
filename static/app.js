@@ -2977,3 +2977,116 @@ function updateCompactBlock() {
   new MutationObserver(applyFilter).observe(list, { childList: true });
   applyFilter();
 })();
+
+// ---------------------------------------------------------------------------
+// Extra hotkeys and smart swap.
+//
+// Additive feature: Ctrl/Cmd+1/2/3 pick the target language (and switch an
+// existing result through the RU/EN/HE pills), Ctrl/Cmd+Shift+S swaps the
+// language pair based on what is actually written in the input, and
+// Ctrl/Cmd+Shift+C copies the current result. The existing Ctrl+Enter handler
+// is left completely alone; every action goes through the existing controls.
+// ---------------------------------------------------------------------------
+(function initExtraHotkeys() {
+  const sourceText = document.getElementById("sourceText");
+  const sourceLanguage = document.getElementById("sourceLanguage");
+  const targetLanguage = document.getElementById("targetLanguage");
+  if (!targetLanguage) return;
+
+  const style = document.createElement("style");
+  style.textContent =
+    ".hotkey-hint{display:block;margin-top:8px;font-size:11px;opacity:.7;line-height:1.6}" +
+    ".hotkey-hint kbd{padding:1px 5px;border-radius:4px;background:rgba(127,127,127,.18);font-size:10px}";
+  document.head.appendChild(style);
+
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  const mod = isMac ? "⌘" : "Ctrl";
+
+  const hint = document.createElement("span");
+  hint.className = "hotkey-hint";
+  hint.innerHTML =
+    `<kbd>${mod}+1</kbd> Russian · <kbd>${mod}+2</kbd> English · <kbd>${mod}+3</kbd> Hebrew · ` +
+    `<kbd>${mod}+Shift+S</kbd> smart swap · <kbd>${mod}+Shift+C</kbd> copy result`;
+  const hintHost = document.getElementById("processBtn")?.parentElement || targetLanguage.parentElement;
+  if (hintHost) hintHost.appendChild(hint);
+
+  function hasOption(select, value) {
+    return Array.from(select.options).some((option) => option.value === value);
+  }
+
+  function setSelect(select, value) {
+    if (!select || !hasOption(select, value) || select.value === value) return false;
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+
+  function detectScript(text) {
+    const value = String(text || "");
+    if (/[\u0590-\u05FF]/.test(value)) return "he";
+    if (/[\u0400-\u04FF]/.test(value)) return "ru";
+    if (/[A-Za-z]/.test(value)) return "en";
+    return "";
+  }
+
+  function pickTarget(code) {
+    const labels = { ru: "Russian", en: "English", he: "Hebrew" };
+    setSelect(targetLanguage, code);
+    // If a result is already on screen, reuse the RU/EN/HE pills so the visible
+    // translation switches too instead of forcing a new run.
+    const pill = document.querySelector(`#translationLangSwitch [data-lang="${code}"]`);
+    if (pill) pill.click();
+    setStatus(`Target language: ${labels[code]}.`, false, true);
+  }
+
+  function smartSwap() {
+    const detected = detectScript(sourceText ? sourceText.value : "");
+    if (!detected) {
+      setStatus("Type some text first - smart swap follows what you wrote.", true);
+      return;
+    }
+    const current = targetLanguage.value;
+    const next = detected === "he" ? (current === "ru" ? "ru" : "ru") : "he";
+    if (sourceLanguage) setSelect(sourceLanguage, detected);
+    setSelect(targetLanguage, next);
+    const labels = { ru: "Russian", en: "English", he: "Hebrew" };
+    setStatus(`Smart swap: ${labels[detected]} → ${labels[next]}.`, false, true);
+  }
+
+  async function copyResult() {
+    const text =
+      typeof primaryResultText === "function"
+        ? primaryResultText()
+        : (document.getElementById("humanizedTranslation") || {}).value || "";
+    if (!text || !String(text).trim()) {
+      setStatus("There is no result to copy yet.", true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(String(text));
+      setStatus("Result copied to the clipboard.", false, true);
+    } catch (error) {
+      setStatus("Could not copy the result.", true);
+    }
+  }
+
+  document.addEventListener("keydown", (event) => {
+    const modifier = event.ctrlKey || event.metaKey;
+    if (!modifier) return;
+    const key = event.key;
+    if (!event.shiftKey && (key === "1" || key === "2" || key === "3")) {
+      event.preventDefault();
+      pickTarget({ "1": "ru", "2": "en", "3": "he" }[key]);
+      return;
+    }
+    if (event.shiftKey && (key === "S" || key === "s")) {
+      event.preventDefault();
+      smartSwap();
+      return;
+    }
+    if (event.shiftKey && (key === "C" || key === "c")) {
+      event.preventDefault();
+      copyResult();
+    }
+  });
+})();
