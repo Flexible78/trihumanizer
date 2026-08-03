@@ -74,6 +74,23 @@ RESULT_CACHE_MAX = int(os.environ.get("TRIHUMANIZER_CACHE_MAX", "64") or 64)
 _RESULT_CACHE: dict = {}
 _RESULT_CACHE_LOCK = threading.Lock()
 
+# Per-IP rate limiting for the endpoints that cost money or CPU. A fixed window
+# is enough here: the point is to stop one client from draining the API budget,
+# not to run a distributed quota service. Counters live in the process, which
+# matches how this app is deployed, and both numbers are configurable so a local
+# install can raise them without touching the code.
+RATE_LIMIT_MAX = int(os.environ.get("TRIHUMANIZER_RATE_LIMIT", "20") or 20)
+RATE_LIMIT_WINDOW = float(os.environ.get("TRIHUMANIZER_RATE_WINDOW", "60") or 60)
+RATE_LIMITED_PREFIXES = (
+    "/api/process",
+    "/api/intent",
+    "/api/export/pdf",
+    "/api/test/key",
+    "/api/test/model",
+)
+_RATE_HITS: dict = {}
+_RATE_LOCK = threading.Lock()
+
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 AUTH_REQUIRED = bool(APP_PASSWORD)
 PROTECTED_PREFIXES = (
@@ -128,6 +145,41 @@ def _redact_error(error: BaseException) -> str:
     return redact_secrets(str(error))[:700]
 
 
+def _client_ip() -> str:
+    """Best effort client address.
+
+    Vercel terminates TLS in front of the app, so the real address arrives in
+    X-Forwarded-For. Only the first hop is trusted, because later hops can be
+    forged by the caller. The value is truncated so a long header cannot bloat
+    the counter table.
+    """
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64] or "unknown"
+    return (request.remote_addr or "unknown")[:64]
+
+
+def _rate_limited(path: str) -> int:
+    """Seconds the caller should wait, or 0 when the request may proceed."""
+    if RATE_LIMIT_MAX <= 0 or RATE_LIMIT_WINDOW <= 0:
+        return 0
+    if not path.startswith(RATE_LIMITED_PREFIXES):
+        return 0
+    now = time.time()
+    key = _client_ip()
+    with _RATE_LOCK:
+        for other, stamps in list(_RATE_HITS.items()):
+            if not stamps or now - stamps[-1] > RATE_LIMIT_WINDOW:
+                _RATE_HITS.pop(other, None)
+        hits = [stamp for stamp in _RATE_HITS.get(key, []) if now - stamp <= RATE_LIMIT_WINDOW]
+        if len(hits) >= RATE_LIMIT_MAX:
+            _RATE_HITS[key] = hits
+            return max(1, int(RATE_LIMIT_WINDOW - (now - hits[0])) + 1)
+        hits.append(now)
+        _RATE_HITS[key] = hits
+    return 0
+
+
 def _requires_auth() -> bool:
     return AUTH_REQUIRED and not session.get("authed")
 
@@ -139,6 +191,18 @@ def gate_requests():
         return Response(status=204)
     if AUTH_REQUIRED and path.startswith(PROTECTED_PREFIXES) and not session.get("authed"):
         return jsonify({"ok": False, "error": "Authentication required."}), 401
+    if request.method == "POST":
+        wait_seconds = _rate_limited(path)
+        if wait_seconds:
+            response = jsonify(
+                {
+                    "ok": False,
+                    "error": "Too many requests. Please wait a few seconds and try again.",
+                }
+            )
+            response.status_code = 429
+            response.headers["Retry-After"] = str(wait_seconds)
+            return response
     return None
 
 
